@@ -1,0 +1,18 @@
+version: '2.1'
+
+services:
+
+  db-skynet-mysql:
+    image: mysql:5.6
+    container_name: db-skynet-mysql
+    environment:
+      # - MYSQL_DATABASE=mine_cfg
+      # - MYSQL_DATABASE=game_jkdh
+      - MYSQL_ROOT_PASSWORD=123456
+      # - MYSQL_USER=jkdh
+      # - MYSQL_PASSWORD=jkdh123456
+    ports:
+      - 3306:3306
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./game_tables.sql:/docker-entrypoint-initdb.d/game_tables.sql
