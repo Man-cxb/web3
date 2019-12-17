@@ -280,20 +280,3 @@ function checkContractAddress(token) {
 }
 
 
-// MonitoringCoin()
-// function MonitoringCoin() {
-//     var subscription = web3.eth.subscribe('pendingTransactions', function (error, result) {
-//         if (!error) {
-//             // console.log(web3.eth.getTransaction(result));
-//             web3.eth.getTransaction(result).then(e => {
-//                 console.log(e["from"] + "-->" + e["to"] + "-->" + web3.utils.fromWei(e["value"], 'ether'))
-//             })
-//         } else {
-//             console.log(error);
-//         }
-//     })
-//         .on("data", function (transaction) {
-//             console.log("-->" + transaction);
-
-//         });
-// }

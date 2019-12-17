@@ -1,6 +1,6 @@
 module.exports = {
-    http:"http://192.168.133.129:8544",//本地连接
-    // websock:"http://192.168.133.129:8544",//本地连接
+    http:"http://192.168.133.129:8544",
+    ws:"ws://192.168.133.129:8543",
     // http:"https://ropsten.infura.io/v3/ef34bbe49df548698d7cdba9dc103f9f"//测试网连接
     // http:"https://mainnet.infura.io/v3/ef34bbe49df548698d7cdba9dc103f9"
     chainId: 3,
