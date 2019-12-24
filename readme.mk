@@ -23,10 +23,10 @@
 
 二、测试方法
 	1.生成地址
-		请求类型：POST
+		请求类型：GET
 		地址：http://127.0.0.1/CreateAccount
-		参数：password -> string
-		例子：curl -H "Content-Type: application/json" -X POST  --data '{"password":"123"}' http://127.0.0.1/CreateAccount
+		参数：无
+		例子：curl http://127.0.0.1/CreateAccount
 	2.导出私钥
 		请求类型：GET
 		地址：http://127.0.0.1/GetPrivateKey
@@ -51,9 +51,23 @@
 		请求类型：POST
 		地址：http://127.0.0.1/transaction
 		参数：fromAddr -> string, toAddr -> string, password -> string, amount -> number
-		例子：curl -H "Content-Type: application/json" -X POST  --data '{"fromAddr":"0xb5e3E5D51fCa7150357a46cFD3Dfd303e8f14638", "toAddr":"0xf17f52151EbEF6C7334FAD080c5704D77216b732","password":"123","amount":0.001}' http://127.0.0.1/transaction
+		例子：curl -H "Content-Type: application/json" -X POST  --data '{"fromAddr":"0xb5e3E5D51fCa7150357a46cFD3Dfd303e8f14638", "toAddr":"0xf17f52151EbEF6C7334FAD080c5704D77216b732","user":"abc@123","password":"123","amount":0.001}' http://127.0.0.1/transaction
 	7.token转账
 		请求类型：POST
 		地址：http://127.0.0.1/transaction
 		参数：fromAddr -> string, toAddr -> string, password -> string, token -> string, amount -> number
-		例子：curl -H "Content-Type: application/json" -X POST  --data '{"token":"TRX","fromAddr":"0xb5e3E5D51fCa7150357a46cFD3Dfd303e8f14638", "toAddr":"0xf17f52151EbEF6C7334FAD080c5704D77216b732","password":"123","amount":0.001}' http://127.0.0.1/transaction
+		例子：curl -H "Content-Type: application/json" -X POST  --data '{"token":"TRX","fromAddr":"0xb5e3E5D51fCa7150357a46cFD3Dfd303e8f14638", "toAddr":"0xf17f52151EbEF6C7334FAD080c5704D77216b732","user":"abc@123","password":"123","amount":0.001}' http://127.0.0.1/transaction
+
+2019.12.24更新
+1.改文件存储为mysql存储
+2.增加白名单功能
+3.增加安全机制，注册账号改为get请求，无需传入参数，密码根据算法生成
+4.修改转账机制，转账时增加user参数，传入参数需与配置相同方可，转出地址如果是用户自己导入的，还需传入password字段，否则去掉该字段，注意以上参数变动
+5.数据库增加两个字段，需要自行增加
+6.使用pm2部署，如果想要按main.js配置启动，需要先运行 export NODE_ENV='production'
+	具体部署方法
+	1.安装pm2：npm install -g pm2 
+	2.启动pm2：pm2 start app.js
+	3.停止pm2：pm2 delete app.js
+	4.查看状态：pm2 list
+	关于pm2的其他用法可以参考http://blog.leanote.com/post/307729748@qq.com/pm2%E4%BD%BF%E7%94%A8%E6%95%99%E7%A8%8B

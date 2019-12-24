@@ -7,14 +7,12 @@ const pool = mysql.createPool(cfg.mysql);
 module.exports = {
     // 不带参数的查询
     query: (sql, callback) => {
-        // 获取一个sql 连接
         pool.getConnection((error,connection) => {
             if(error){
                 console.log('连接数据失败');
                 callback(error);
                 connection.release()
             }else{
-                // 执行查询
                 connection.query(sql, (error, result) => {
                     if(error){
                         callback(error);
@@ -42,7 +40,6 @@ module.exports = {
                 }
             }
         }
-        console.log("-->>", sql)
         if (sql == "") {
             callback({"err":"操作类型错误"});
             return

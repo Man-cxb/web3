@@ -14,15 +14,16 @@ app.use(bodyParser.json())
 server.listen(80);
 
 app.use('*',(req, res, next) => {
+    var ip = req.headers['x-real-ip'] ? req.headers['x-real-ip'] : req.ip.replace(/::ffff:/, '');
     for (const key in cfg.whitelist) {
-        if (key == req.host) {
+        if (key == ip) {
             console.log("来自%s，ip：%s的请求，url：", cfg.whitelist[key], req.host, req.baseUrl)
             next()
             return
         }
     }
-    console.log("无效请求：ip:%s, url:%s", req.host, req.baseUrl)
-    res.send({err:"无效的请求"})
+    console.log("无效请求：ip:%s, url:%s", ip, req.baseUrl)
+    res.send({err: "无效的请求"})
 })
 
 // 创建web3链接
@@ -113,26 +114,6 @@ app.get('/GetPrivateKey', async function (req, res) {
             return false
         }
     })
-
-    // let ok = false
-    // let list = fs.readdirSync('./backup')
-    // for (let i = 0; i < list.length; i++) {
-    //     if (list[i] == address) {
-    //         ok = true
-    //         break
-    //     }
-    // }
-    // if (ok == false) {
-    //     res.send({ "err": "找不到对应的地址！" })
-    //     return
-    // }
-    // let privateKey = GetPrivateKeyFromBackup(address, password)
-    // if (privateKey == false) {
-    //     res.send({ "err": "请输入正确的密码！" })
-    // } else {
-    //     let data = { "privateKey": privateKey }
-    //     res.send(data)
-    // }
 })
 
 // 导入私钥
@@ -152,7 +133,8 @@ app.post('/importPrivateKey', function (req, res) {
     }
 
     let backfile = web3.eth.accounts.encrypt(wallet.privateKey, password);
-    sqlhelper.query_objc("save", "t_account", [wallet.address, JSON.stringify(backfile)],(error, callback)=>{
+    let time = Date.now()
+    sqlhelper.query_objc("save", "t_account", [wallet.address, JSON.stringify(backfile), time, "user input"],(error, callback)=>{
         if(error){
             console.log(error)
             res.send({ "err": "存储数据库出错" })
@@ -160,23 +142,16 @@ app.post('/importPrivateKey', function (req, res) {
         }
         res.send("ok")
     })
-    
-    // const filePath = path.resolve(__dirname, 'backup/' + wallet.address);
-    // fs.writeFileSync(filePath, JSON.stringify(backfile));
-    // res.send("ok")
 })
 
 // 通过官方web3创建私钥和备份文件
-app.post('/CreateAccount', function (req, res) {
-    let password = req.body.password
-    if (password == "" || password == null) {
-        res.send({ "err": "请输入密码！" })
-        return
-    }
+app.get('/CreateAccount', function (req, res) {
     let wallet = web3.eth.accounts.create();
+    let password = getPassword(wallet.address)
+    console.log("创建账户：address:%s, pwd:%s",wallet.address, password)
     let backfile = web3.eth.accounts.encrypt(wallet.privateKey, password);
-
-    sqlhelper.query_objc("save", "t_account", [wallet.address, JSON.stringify(backfile)],(error, callback)=>{
+    let time = Date.now()
+    sqlhelper.query_objc("save", "t_account", [wallet.address, JSON.stringify(backfile), time, "system create"],(error, callback)=>{
         if(error){
             console.log(error)
             res.send({ "err": "存储数据库出错" })
@@ -184,20 +159,20 @@ app.post('/CreateAccount', function (req, res) {
         }
     })
     res.send({"address": wallet.address})
-    // 只保留备份文件到本地
-    // const filePath = path.resolve(__dirname, 'backup/' + wallet.address);
-    // fs.writeFileSync(filePath, JSON.stringify(backfile));
-    // res.send(account)
 })
 
 // 以太坊转账
 app.post('/transaction', function (req, res) {
+    let user = req.body.user
+    if (user != cfg.user) {
+        res.send({ "err": "权限不足" })
+        return
+    }
     let fromAddr = req.body.fromAddr    // 转账地址
-    let password = req.body.password    // 转账地址的密码
     let toAddr = req.body.toAddr        // 对方地址
     let amount = req.body.amount        // 转账金额
     let token = req.body.token          // 转账代币
-    if (fromAddr == null || password == null || toAddr == null || amount == null) {
+    if (fromAddr == null || toAddr == null || amount == null) {
         res.send({ "err": "请输入正确的参数！" })
         return
     }
@@ -229,6 +204,10 @@ app.post('/transaction', function (req, res) {
         }
         let backup = bufferToJson(callback[0].backup)
         let privateKey = ""
+        let password = req.body.password
+        if (password == null) {
+            password = getPassword(fromAddr)
+        }
         try {
             let account = web3.eth.accounts.decrypt(backup, password);
             privateKey = account.privateKey
@@ -303,17 +282,6 @@ app.post('/transaction', function (req, res) {
                 console.log(error);
             });
     })
-
-    // let exist = checkAddressInLocal(fromAddr)
-    // if (exist == false) {
-    //     res.send({ "err": "请先导入私钥！" })
-    //     return
-    // }
-    // let privateKey = GetPrivateKeyFromBackup(fromAddr, password)
-    // if (privateKey == false) {
-    //     res.send({ "err": "请输入正确的密码！" })
-    // }
-
 })
 
 function getOneERC20Token(contractAddress) {
@@ -322,30 +290,6 @@ function getOneERC20Token(contractAddress) {
     let interface = JSON.parse(interfacestring);
     let contract = new web3.eth.Contract(interface, contractAddress)
     return contract;
-}
-
-function GetPrivateKeyFromBackup(address, password) {
-    let file = path.resolve(__dirname, './backup/' + address)
-    const backup = fs.readFileSync(file, 'utf8');
-
-    try {
-        const account = web3.eth.accounts.decrypt(backup, password);
-        return account.privateKey
-    } catch (error) {
-        return false
-    }
-}
-
-function checkAddressInLocal(address) {
-    let isok = false
-    let list = fs.readdirSync('./backup')
-    for (let i = 0; i < list.length; i++) {
-        if (list[i] == address) {
-            isok = true
-            break
-        }
-    }
-    return isok
 }
 
 function checkContractAddress(token) {
@@ -363,4 +307,10 @@ function bufferToJson(buff){
     let datastr = Buffer.from(jsondata).toString();
     let data = JSON.parse(datastr);
     return data
+}
+
+// 获取密码，目前为配置密码 拼接 地址后6位，可根据需要修改
+function getPassword(address){
+    var str = address.substr(address.length - 6, address.length);
+    return cfg.accountPassword + str
 }

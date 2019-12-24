@@ -1,6 +1,8 @@
 DROP TABLE IF EXISTS `t_account`;
 CREATE TABLE `t_account` (
     `address` char(42) NOT NULL comment '地址',
+    `time` char(42) NOT NULL comment '注册时间',
+    `des` char(42) NOT NULL comment '备注',
     `backup` blob comment '备份文件',
     PRIMARY KEY (`address`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;

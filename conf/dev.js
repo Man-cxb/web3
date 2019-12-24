@@ -19,10 +19,12 @@ module.exports = {
         '127.0.0.1':'本地'
     },
     setSql: {
-        "t_account": "insert into t_account (address, backup) value (?,?);",
+        "t_account": "insert into t_account (address, backup, time, des) value (?,?,?,?);",
         "t_transaction": "insert into t_transaction (block, txHash, fromAddress, toAddress, coin, amount) value (?,?,?,?,?,?);",
     },
     getSql: {
         "t_account": "select * from t_account where address = ?"
-    }
+    },
+    accountPassword: "123456",
+    user:"abc@123"
 }
