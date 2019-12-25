@@ -23,7 +23,7 @@ app.use('*',(req, res, next) => {
         }
     }
     console.log("无效请求：ip:%s, url:%s", ip, req.baseUrl)
-    res.send({err: "无效的请求"})
+    res.send(fail("无效的请求"))
 })
 
 // 创建web3链接
@@ -31,33 +31,33 @@ const web3 = new Web3(cfg["http"]);
 
 app.get('/', function (req, res) {
     console.log(process.env.NODE_ENV);
-    res.send({ "state": "ok!" });
+    res.send(success("ok"));
 });
 
 
 //获取以太坊主链代币数量
 app.get('/GetEthBalance', async function (req, res) {
     if (req.query.address == "" || req.query.address == null) {
-        res.send({ "err": "请输入要查询的地址！" })
+        res.send(fail("请输入要查询的地址！"))
         return
     }
     // console.log(req.query.address)
     let check = web3.utils.isAddress(req.query.address)
     console.log(check)
     if (check == false) {
-        res.send({ "err": "请输入有效的地址！" })
+        res.send(fail("请输入有效的地址！"))
         return
     }
     let eth = await web3.eth.getBalance(req.query.address);
     let balance = web3.utils.fromWei(eth, 'ether')
-    res.send(balance)
+    res.send(success(balance))
 })
 
 //获取合约代币资产
 app.get('/GetTokenBalance', async function (req, res) {
     let check = web3.utils.isAddress(req.query.address)
     if (check == false) {
-        res.send({ "err": "请输入有效的地址！" })
+        res.send(fail("请输入有效的地址！"))
         return
     }
     let contractAddress = ""
@@ -67,7 +67,7 @@ app.get('/GetTokenBalance', async function (req, res) {
         }
     }
     if (contractAddress == "") {
-        res.send({ "err": "合约地址不支持！" })
+        res.send(fail("合约地址不支持！"))
         return
     }
     let contract = getOneERC20Token(contractAddress);
@@ -77,7 +77,7 @@ app.get('/GetTokenBalance', async function (req, res) {
     let token = {}
     token.symbol = symbol;
     token.balance = balance / Math.pow(10, decimals);
-    res.send(token)
+    res.send(success(token))
 })
 
 // 获取私钥
@@ -85,32 +85,33 @@ app.get('/GetPrivateKey', async function (req, res) {
     let address = req.query.address
     let password = req.query.password
     if (address == null || password == null) {
-        res.send({ "err": "合约地址不支持！" })
+        res.send(fail("合约地址不支持！"))
         return
     }
     let check = web3.utils.isAddress(address)
     if (check == false) {
-        res.send({ "err": "请输入有效的地址！" })
+        res.send(fail("请输入有效的地址！"))
         return
     }
 
     sqlhelper.query_objc("query", "t_account", [address],(error, callback)=>{
         if(error){
             console.log("查询数据库出错：",error)
-            res.send({ "err": "查询数据库出错" });
+            res.send(fail("查询数据库出错"));
             return
         }
         if (callback[0] == null) {
-            res.send({ "err": "找不到私钥！" });
+            res.send(fail("找不到私钥！"));
             return
         }
         let backup = bufferToJson(callback[0].backup)
         try {
             let account = web3.eth.accounts.decrypt(backup, password);
-            res.send({ "privateKey": account.privateKey });
+            console.log("地址：%s 的私钥已被查询", address)
+            res.send(success({ "privateKey": account.privateKey }));
             return 
         } catch (error) {
-            res.send({ "err": "请输入正确的密码！" });
+            res.send(fail("请输入正确的密码！"));
             return false
         }
     })
@@ -121,14 +122,14 @@ app.post('/importPrivateKey', function (req, res) {
     let privateKey = req.body.privateKey
     let password = req.body.password
     if (privateKey == "" || privateKey == null || password == "" || password == null) {
-        res.send({ "err": "请输入正确的参数！" })
+        res.send(fail("请输入正确的参数！"))
         return
     }
     let wallet
     try {
         wallet = web3.eth.accounts.privateKeyToAccount(privateKey)
     } catch (error) {
-        res.send({ "err": "请输入正确的私钥！" })
+        res.send(fail("请输入正确的私钥！"))
         return
     }
 
@@ -137,10 +138,11 @@ app.post('/importPrivateKey', function (req, res) {
     sqlhelper.query_objc("save", "t_account", [wallet.address, JSON.stringify(backfile), time, "user input"],(error, callback)=>{
         if(error){
             console.log(error)
-            res.send({ "err": "存储数据库出错" })
+            res.send(fail("存储数据库出错"))
             return
         }
-        res.send("ok")
+        console.log("成功导入账号，地址：%s，私钥尾号：%s", wallet.address, privateKey.substr(privateKey.length - 6, privateKey.length))
+        res.send(success("ok"))
     })
 })
 
@@ -148,58 +150,62 @@ app.post('/importPrivateKey', function (req, res) {
 app.get('/CreateAccount', function (req, res) {
     let wallet = web3.eth.accounts.create();
     let password = getPassword(wallet.address)
-    console.log("创建账户：address:%s, pwd:%s",wallet.address, password)
     let backfile = web3.eth.accounts.encrypt(wallet.privateKey, password);
     let time = Date.now()
     sqlhelper.query_objc("save", "t_account", [wallet.address, JSON.stringify(backfile), time, "system create"],(error, callback)=>{
         if(error){
             console.log(error)
-            res.send({ "err": "存储数据库出错" })
+            res.send(fail("存储数据库出错"))
             return
         }
     })
-    res.send({"address": wallet.address})
+    console.log("创建账户：address:%s, pwd:%s",wallet.address, password)
+    res.send(success({"address": wallet.address}))
 })
 
 // 以太坊转账
 app.post('/transaction', function (req, res) {
     let user = req.body.user
     if (user != cfg.user) {
-        res.send({ "err": "权限不足" })
+        res.send(fail("权限不足"))
         return
     }
     let fromAddr = req.body.fromAddr    // 转账地址
     let toAddr = req.body.toAddr        // 对方地址
     let amount = req.body.amount        // 转账金额
     let token = req.body.token          // 转账代币
+    let des = req.body.des
     if (fromAddr == null || toAddr == null || amount == null) {
-        res.send({ "err": "请输入正确的参数！" })
+        res.send(fail("请输入正确的参数！"))
         return
     }
 
     let checkFromAddr = web3.utils.isAddress(fromAddr)
     if (checkFromAddr == false) {
-        res.send({ "err": "请输入有效的fromAddr！" })
+        res.send(fail("请输入有效的fromAddr！"))
         return
     }
     let checkToAddr = web3.utils.isAddress(toAddr)
     if (checkToAddr == false) {
-        res.send({ "err": "请输入有效的toAddr！" })
+        res.send(fail("请输入有效的toAddr！"))
         return
     }
+    let toAddress = toAddr // 保存转出地址
     if (typeof (amount) != "number") {
-        res.send({ "err": "转账金额格式为number！" })
+        res.send(fail("转账金额格式为number！"))
         return
     }
-
+    if (des == null) {
+        des = ""
+    }
     sqlhelper.query_objc("query", "t_account", [fromAddr], async (error, callback)=>{
         if(error){
             console.log("查询数据库出错：",error)
-            res.send({ "err": "查询数据库出错" });
+            res.send(fail("查询数据库出错"));
             return
         }
         if (callback[0] == null) {
-            res.send({ "err": "请先导入私钥！" });
+            res.send(fail("请先导入私钥！"));
             return
         }
         let backup = bufferToJson(callback[0].backup)
@@ -212,7 +218,7 @@ app.post('/transaction', function (req, res) {
             let account = web3.eth.accounts.decrypt(backup, password);
             privateKey = account.privateKey
         } catch (error) {
-            res.send({ "err": "请输入正确的密码！" });
+            res.send(fail("请输入正确的密码！"));
             return false
         }
 
@@ -225,13 +231,13 @@ app.post('/transaction', function (req, res) {
         }else{
             let contractAddress = checkContractAddress(token)
             if (contractAddress == false) {
-                res.send({ "err": "合约地址不支持！" })
+                res.send(fail("合约地址不支持！"))
                 return
             }
             let contract = getOneERC20Token(contractAddress);
             let decimals = await contract.methods.decimals().call(); // 获取最小单位
-            amount = amount * Math.pow(10, decimals);
-            tokenData = contract.methods.transfer(toAddr, amount).encodeABI();
+            let coinAmount = amount * Math.pow(10, decimals);
+            tokenData = contract.methods.transfer(toAddr, coinAmount).encodeABI();
             toAddr = contractAddress
         }
     
@@ -255,7 +261,7 @@ app.post('/transaction', function (req, res) {
     
         let balance = await web3.eth.getBalance(fromAddr);
         if (balance < toAmount + gas * gasPrice) {
-            res.send({ "err": "账户余额不足转账金额加手续费" })
+            res.send(fail("账户余额不足转账金额加手续费"))
             return
         }
     
@@ -265,21 +271,27 @@ app.post('/transaction', function (req, res) {
         web3.eth.sendSignedTransaction(signTx.rawTransaction)
             .on('transactionHash', function (hash) {
                 // on 是事件机制,只有当方法调用过程中回调了transactionHash事件才会走到这里
-                console.log("transactionHash:" + hash);
+                // console.log("transactionHash:" + hash);
             })
             .on('receipt', function (receipt) {
-                console.log("receipt:", receipt)
-                res.send(receipt)
+                // console.log("receipt:", receipt)
+                console.log("转账成功：transactionHash:%s, blockNumber:%s, from:%s, to:%s, toke:%s, amount:%d", receipt.transactionHash, receipt.blockNumber, fromAddr, toAddress, token, amount)
+                let data = [receipt.blockNumber, receipt.transactionHash, fromAddr, toAddress, token, amount, des]
+                sqlhelper.query_objc("save", "t_transaction", data, (error, callback)=>{
+                    if(error){
+                        console.log("存储数据库出错:", error)
+                    }
+                })
+                res.send(success(receipt))
             })
             .on('confirmation', function (confirmationNumber, receipt) {
-                console.log("收到第" + confirmationNumber + "次确认");
-                if (confirmationNumber === 12) {
-                    console.log("完成12次确认：\n" + JSON.stringify(receipt));
-                    // res.send('成功')
-                }
+                // console.log("收到第" + confirmationNumber + "次确认");
+                // if (confirmationNumber === 12) {
+                //     console.log("完成12次确认：\n" + JSON.stringify(receipt));
+                // }
             })
             .on('error', function (error) {
-                console.log(error);
+                console.log("转账出错：", error);
             });
     })
 })
@@ -313,4 +325,18 @@ function bufferToJson(buff){
 function getPassword(address){
     var str = address.substr(address.length - 6, address.length);
     return cfg.accountPassword + str
+}
+
+function success (data) {
+    return {
+        code: 0,
+        msg: data
+    }
+}
+
+function fail (data) {
+    return {
+        code: 1,
+        msg: data
+    }
 }

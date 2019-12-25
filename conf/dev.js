@@ -20,7 +20,7 @@ module.exports = {
     },
     setSql: {
         "t_account": "insert into t_account (address, backup, time, des) value (?,?,?,?);",
-        "t_transaction": "insert into t_transaction (block, txHash, fromAddress, toAddress, coin, amount) value (?,?,?,?,?,?);",
+        "t_transaction": "insert into t_transaction (blockNum, txHash, fromAddress, toAddress, coin, amount, des) value (?,?,?,?,?,?,?);",
     },
     getSql: {
         "t_account": "select * from t_account where address = ?"
