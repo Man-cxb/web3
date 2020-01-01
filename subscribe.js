@@ -1,23 +1,83 @@
 const Web3 = require('web3');
 const cfg = require("./conf/conf").getCfg();
-var web3 = new Web3(cfg["ws"]);
 const path = require('path');
 const fs = require('fs');
+const Tx = require("./src/Tx")
+const db = require("./src/db")
+const tool = require("./src/tool")
 
-getOneERC20Token("0xb37867855b769834dc6e44f86325b046d668541f")
-async function getOneERC20Token(contractAddress) {
-    let filepath = path.resolve(__dirname, './solinterface/token.json');
-    let interfacestring = JSON.parse(fs.readFileSync(filepath)).interface;
-    let interface = JSON.parse(interfacestring);
-    let contract = new web3.eth.Contract(interface, contractAddress)
-    let decimals = await contract.methods.decimals().call(); // 获取最小单位
+var web3 = new Web3(cfg["ws"]);
+let addressList = new Map();
+let contractList = new Map(cfg.contractAddr)
+
+db.query("t_account", null, function(res){
+    if (res.code != 0) {
+        console.log(res.msg)
+    }else{
+        for (let i = 0; i < res.msg.length; i++) {
+            const data = res.msg[i];
+            const backup = tool.bufferToJson(data.backup)
+            addressList.set(data.address, backup)
+        }
+    } 
+})
+
+subscribe("TRX")
+async function subscribe(token) {
+    if (contractList.has(token)) {
+        console.log("找不到合约地址")
+        return
+    }
+    let contractAddress = contractList.get(token)
+    let inter = tool.getTokenInterface()
+    let contract = new web3.eth.Contract(inter, contractAddress)
+    let decimals = await contract.methods.decimals().call();
     let mod = Math.pow(10, decimals)
-    contract.events.Transfer({filter: {}}, function(error, event){ 
-        // console.log("--err>", error)
+    contract.events.Transfer({filter: {}}, async function(error, event){ 
         // console.log("--0>", event); 
-        let data = event.returnValues
-        let value = parseInt(data._value) / mod
-        console.log("tx:%s, block:%s, form:%s, to:%s, value:%s", event.transactionHash,event.blockNumber, data._from, data._to, value); 
+        if (!error) {
+            console.log("订阅错误：", error)
+        }else{
+            let data = event.returnValues
+            let txHash = event.transactionHash
+            let block = event.blockNumber
+            let from = data._from
+            let to = data._to
+            let value = parseInt(data._value) / mod
+
+            if (addressList.has(to)) {
+                //检测到有代币转入指定的地址
+                console.log("有转入代币： tx:%s, block:%s, form:%s, to:%s, value:%s", txHash, block, from, to, value);
+                //转出代币签名(从to转到汇总钱包)
+                let toBackup = addressList.get(to)
+                let password = tool.getPassword(to)
+                let account = web3.eth.accounts.decrypt(toBackup, password);
+                let privateKey = account.privateKey
+                let signTxTokenCb = await Tx.signTxToken(to, privateKey, cfg.coldWallet, contractAddress, value)
+                console.log("转出代币签名：", signTxTokenCb)
+                if (signTxTokenCb.code != 0) {
+                    console.log("签名Token失败：", signTxTokenCb)
+                    return
+                }
+                let costGas = signTxTokenCb.cost * 1.1 // 转出Token所需手续费
+
+                //转出手续费签名(从热钱包转出手续费)
+                let fromHot = cfg.hotWallet
+                let fromHotPriKey = tool.getPassword(fromHot)
+                let signTxEthCb = await Tx.signTxETH(fromHot, fromHotPriKey, to, costGas)
+                console.log("转出手续费签名: ", signTxEthCb)
+                if (signTxEthCb.code != 0) {
+                    console.log("签名ETH失败：", signTxEthCb)
+                    return
+                }
+
+                //转出手续费
+                // Tx.transaction(signTxEthCb.signTx)
+
+                //转出代币
+
+            }
+        }
     })
     .on('data', function(event){
         // console.log("--1>", event);
@@ -28,56 +88,3 @@ async function getOneERC20Token(contractAddress) {
     })
     .on('error', console.error);
 }
-
-// web3.eth.subscribe('pendingTransactions', function (error, txid) {
-//     if (error == null) {
-//         web3.eth.getTransaction(txid).then(data => {
-//             // console.log("转账hash：%s，from：%s，to：%s，value：%s", txid, data.from, data.to, web3.utils.fromWei(data.value, 'ether'))
-//             if (data.to){
-//                 for (const key in cfg.contractAddr) {
-//                     if (cfg.contractAddr[key] == data.to.toLowerCase()) {
-//                         console.log("--->>", data)
-//                     }
-//                 }
-//             }
-//         })
-//     } else {
-//         console.log(error);
-//     }
-// })
-//     .on("data", function (transaction) {
-//         // console.log("-->" + transaction);
-//     });
-
-// web3.eth.getTransaction("0xf462a43e7ccef26be807e54ab78714e792e72129262cfb0afcc499365327a644").then(data => {
-//     console.log(data)
-// })
-
-// web3.eth.subscribe('logs', {
-//     address: '0xf17f52151EbEF6C7334FAD080c5704D77216b732',
-//     topics: ['0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef']
-// }, function (error, result) {
-//     console.log("--err>",error)
-//     console.log("--res>",result)
-// });
-
-
-
-// web3.eth.subscribe('logs', {address: '0xb37867855b769834dc6e44f86325b046d668541f',topics: ['0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef']}, function (error, data) {
-// web3.eth.subscribe('logs', {address: '0xdac17f958d2ee523a2206206994597c13d831ec7'}, function (error, data) {
-//     console.log("--err>",error)
-//     console.log("--res>", data)
-    // if (data.address.toLowerCase() == '0xb37867855b769834dc6e44f86325b046d668541f') {
-    //     web3.eth.getTransaction(data.transactionHash).then(data => {
-    //         // console.log("转账hash：%s，from：%s，to：%s，value：%s", txid, data.from, data.to, web3.utils.fromWei(data.value, 'ether'))
-    //         if (data.to) {
-    //             for (const key in cfg.contractAddr) {
-    //                 if (cfg.contractAddr[key] == data.to.toLowerCase()) {
-    //                     console.log("--->>", data)
-    //                 }
-    //             }
-    //         }
-    //     })
-    // }
-// });
-

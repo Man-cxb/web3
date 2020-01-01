@@ -25,9 +25,9 @@
 	1.生成地址
 		请求类型：GET
 		地址：http://127.0.0.1/CreateAccount
-		参数：无
-		例子：curl http://127.0.0.1/CreateAccount
-	2.导出私钥
+		参数：appid -> string
+		例子：curl http://127.0.0.1/CreateAccount?appid=id123
+	2.导出私钥(抛弃)
 		请求类型：GET
 		地址：http://127.0.0.1/GetPrivateKey
 		参数：address -> string, password -> string
@@ -35,8 +35,8 @@
 	3.导入私钥
 		请求类型：POST
 		地址：http://127.0.0.1/importPrivateKey
-		参数：privateKey -> string, password -> string
-		例子：curl -H "Content-Type: application/json" -X POST  --data '{"password":"123", "privateKey":"0x5eb2b5cc620260b2f4e126db24adcceb6263d77dacbf528a72d576adad33344b"}' http://127.0.0.1/importPrivateKey
+		参数：privateKey -> string, appid -> string
+		例子：curl -H "Content-Type: application/json" -X POST  --data '{"appid":"id123", "privateKey":"0x5eb2b5cc620260b2f4e126db24adcceb6263d77dacbf528a72d576adad33344b"}' http://127.0.0.1/importPrivateKey
 	4.eth余额查询
 		请求类型：GET
 		地址：http://127.0.0.1/GetEthBalance
@@ -50,13 +50,18 @@
 	6.eth转账
 		请求类型：POST
 		地址：http://127.0.0.1/transaction
-		参数：fromAddr -> string, toAddr -> string, password -> string, amount -> number
-		例子：curl -H "Content-Type: application/json" -X POST  --data '{"fromAddr":"0xb5e3E5D51fCa7150357a46cFD3Dfd303e8f14638", "toAddr":"0xf17f52151EbEF6C7334FAD080c5704D77216b732","user":"abc@123","password":"123","amount":0.001}' http://127.0.0.1/transaction
+		参数：fromAddr -> string, toAddr -> string, password -> string, amount -> number, appid -> string
+		例子：curl -H "Content-Type: application/json" -X POST  --data '{"fromAddr":"0xb5e3E5D51fCa7150357a46cFD3Dfd303e8f14638", "toAddr":"0xf17f52151EbEF6C7334FAD080c5704D77216b732","appid":"id123","password":"123","amount":0.001}' http://127.0.0.1/transaction
 	7.token转账
 		请求类型：POST
 		地址：http://127.0.0.1/transaction
-		参数：fromAddr -> string, toAddr -> string, password -> string, token -> string, amount -> number
-		例子：curl -H "Content-Type: application/json" -X POST  --data '{"token":"TRX","fromAddr":"0xb5e3E5D51fCa7150357a46cFD3Dfd303e8f14638", "toAddr":"0xf17f52151EbEF6C7334FAD080c5704D77216b732","user":"abc@123","password":"123","amount":0.001}' http://127.0.0.1/transaction
+		参数：fromAddr -> string, toAddr -> string, password -> string, token -> string, amount -> number, appid -> string
+		例子：curl -H "Content-Type: application/json" -X POST  --data '{"token":"TRX","fromAddr":"0xb5e3E5D51fCa7150357a46cFD3Dfd303e8f14638", "toAddr":"0xf17f52151EbEF6C7334FAD080c5704D77216b732","appid":"id123","password":"123","amount":0.001}' http://127.0.0.1/transaction
+	8.提币
+		请求类型：POST
+		地址：http://127.0.0.1/tibi
+		参数：toAddr -> string, appid -> string, token -> string, amount -> number
+		例子：curl -H "Content-Type: application/json" -X POST  --data '{"token":"TRX", "toAddr":"0x95F2C680aB5Ee873f1694913230cf28DE4Cd6a77","appid":"id123","amount":1}' http://127.0.0.1/tibi
 
 2019.12.24更新
 1.改文件存储为mysql存储
@@ -71,3 +76,13 @@
 	3.停止pm2：pm2 delete app.js
 	4.查看状态：pm2 list
 	关于pm2的其他用法可以参考http://blog.leanote.com/post/307729748@qq.com/pm2%E4%BD%BF%E7%94%A8%E6%95%99%E7%A8%8B
+
+2019.1.1更新
+1.增加appid
+2.增加提币接口
+3.优化数据库存储
+
+TODO：
+1.提币完成通知游戏后端
+2.完善代币监测及汇总功能
+3.后端获取到账接口

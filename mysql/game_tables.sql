@@ -2,6 +2,7 @@ DROP TABLE IF EXISTS `t_account`;
 CREATE TABLE `t_account` (
     `address` char(42) NOT NULL comment '地址',
     `time` char(42) NOT NULL comment '注册时间',
+    `appid` int NOT NULL comment 'appid',
     `des` char(42) NOT NULL comment '备注',
     `backup` blob comment '备份文件',
     PRIMARY KEY (`address`)
@@ -15,6 +16,8 @@ CREATE TABLE `t_transaction` (
     `toAddress` char(42) NOT NULL comment '转入地址',
     `coin` varchar(10) NOT NULL comment '代币类型',
     `amount` int(32) NOT NULL comment '转账金额',
+    `time` char(42) NOT NULL comment '注册时间',
     `des` varchar(64) NOT NULL comment '备注',
-    PRIMARY KEY (`txHash`)
+    PRIMARY KEY (`fromAddress`,`txHash`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
