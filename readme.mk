@@ -86,3 +86,38 @@ TODO：
 1.提币完成通知游戏后端
 2.完善代币监测及汇总功能
 3.后端获取到账接口
+
+2019.1.5更新
+1.更新与后端交互模式
+2.增加redis数据库，方便多进程数据共享
+3.api服务与区块链订阅服务分开两个进程运行，需分别启动（app.js和subscribe.js）
+
+TODO：
+1.优化代码
+2.数据入库（目前充值和提现数据还没入库）
+
+-------------------------------------
+ 后端接口要求
+ 协议：http
+ 请求类型：POST
+ 
+ 功能1：充值
+ 区块链收到代币时通知后端
+ 后端提供接口："/rechargeCallback"
+ 收到参数：address, time
+ 收到后向token服务器查询
+ token服务器查询接口："/queryRecharge"
+ 参数需求：address，time
+ 返回参数：address, amount
+
+功能2：提现
+后台向服务端提交提现订单
+token服务器接口："/requestWithdraw"
+需要参数：token, address, amount, appid
+token服务器向后端请求验证
+后端提供接口："/checkTokenWithdraw"
+收到参数：address, amount, token
+验证成功后直接转账，转账成功与否都通知后端
+后端提供接口："/tokenWithdrawCallback"
+收到参数：address, amount
+ ------------------------------------

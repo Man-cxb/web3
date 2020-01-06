@@ -24,6 +24,42 @@ function getPassword(address){
     return cfg.accountPassword + str
 }
 
+// 获取管理员账户
+function getAdminAddress(appid) {
+    let appList = cfg.appList
+    for (let i = 0; i < appList.length; i++) {
+        if (appList[i].id == appid) {
+            return appList[i].admin
+        }
+    }
+    return null
+}
+
+// 检测appid是否支持
+function checkAppid(appid) {
+    let appList = cfg.appList
+    for (let i = 0; i < appList.length; i++) {
+        if (appList[i].id == appid) {
+            return true
+        }
+    }
+    return false
+}
+
+// 获取后端地址
+function getGameCfg(appid){
+    let appList = cfg.appList
+    for (let i = 0; i < appList.length; i++) {
+        if (appList[i].id == appid) { 
+            return {host: appList[i].gameHost, port: appList[i].gamePort}
+        }
+    }
+    return null
+}
+
 exports.getTokenInterface = getTokenInterface
 exports.bufferToJson = bufferToJson
 exports.getPassword = getPassword
+exports.getAdminAddress = getAdminAddress
+exports.checkAppid = checkAppid
+exports.getGameCfg = getGameCfg

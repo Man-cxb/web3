@@ -31,11 +31,20 @@ module.exports = {
         
     accountPassword: "123456", // 加密和解密私钥
     coldWallet: "0xb5e3E5D51fCa7150357a46cFD3Dfd30000000000", // 代币汇总地址
-    // hotWallet: "0xb5e3E5D51fCa7150357a46cFD3Dfd303e8f14638", // 提供ETH手续费 
-    appid:[
-        ["id123", "http://127.0.0.1:90/callback"]
+    appList: [
+        {
+            id: "id123",
+            admin: "0xb5e3E5D51fCa7150357a46cFD3Dfd303e8f14638",
+            gameHost: "127.0.0.1",
+            gamePort: "80"
+        }
     ],
-    appAdmin:[ // 提供ETH手续费 
-        ["id123", "0xb5e3E5D51fCa7150357a46cFD3Dfd303e8f14638"]
-    ]
+    redis:{
+        host:"127.0.0.1", 
+        port:6379, 
+        password:123456
+    },
+    rechargePath: "/rechargeCallback", // 区块链收到币时通知
+    checkTokenWithdraw: "/checkTokenWithdraw", // 后台提币时，向后端校验
+    withdrawPath: "/tokenWithdrawCallback",//提现结果通知
 }

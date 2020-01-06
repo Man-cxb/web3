@@ -1,30 +1,25 @@
 const Web3 = require('web3');
 const cfg = require("./conf/conf").getCfg();
-const path = require('path');
-const fs = require('fs');
-const Tx = require("./src/Tx")
+// const path = require('path');
+// const fs = require('fs');
+// const Tx = require("./src/Tx")
 const db = require("./src/db")
 const tool = require("./src/tool")
+const httpCli = require("./src/httpClient")
+
+var redis = require("redis")
+var bluebird = require("bluebird")
+var redisCli = redis.createClient(cfg.redis);
+bluebird.promisifyAll(redis.RedisClient.prototype);
+
 
 var web3 = new Web3(cfg["ws"]);
-let addressList = new Map();
 let contractList = new Map(cfg.contractAddr)
+let addressList = {}
 
-db.query("t_account", null, function(res){
-    if (res.code != 0) {
-        console.log(res.msg)
-    }else{
-        for (let i = 0; i < res.msg.length; i++) {
-            const data = res.msg[i];
-            const backup = tool.bufferToJson(data.backup)
-            addressList.set(data.address, backup)
-        }
-    } 
-})
 
-subscribe("TRX")
-async function subscribe(token) {
-    if (contractList.has(token)) {
+async function subscribeToken(token) {
+    if (!contractList.has(token)) {
         console.log("找不到合约地址")
         return
     }
@@ -33,50 +28,48 @@ async function subscribe(token) {
     let contract = new web3.eth.Contract(inter, contractAddress)
     let decimals = await contract.methods.decimals().call();
     let mod = Math.pow(10, decimals)
+
     contract.events.Transfer({filter: {}}, async function(error, event){ 
-        // console.log("--0>", event); 
-        if (!error) {
+        if (error) {
             console.log("订阅错误：", error)
         }else{
             let data = event.returnValues
+            let to = data._to
+            let appid = ""
+            for (let index = 0; index < cfg.appList.length; index++) {
+                console.log(cfg.appList[index])
+                let id = cfg.appList[index].id
+                let ok = await redisCli.hexistsAsync(id, to)
+                if (ok == 1) {
+                    appid = id
+                }
+            }
+            if (appid == "") {
+                return
+            }
+
             let txHash = event.transactionHash
             let block = event.blockNumber
             let from = data._from
-            let to = data._to
+            
             let value = parseInt(data._value) / mod
+            console.log("有转入代币： tx:%s, block:%s, form:%s, to:%s, value:%s", txHash, block, from, to, value);
 
-            if (addressList.has(to)) {
-                //检测到有代币转入指定的地址
-                console.log("有转入代币： tx:%s, block:%s, form:%s, to:%s, value:%s", txHash, block, from, to, value);
-                //转出代币签名(从to转到汇总钱包)
-                let toBackup = addressList.get(to)
-                let password = tool.getPassword(to)
-                let account = web3.eth.accounts.decrypt(toBackup, password);
-                let privateKey = account.privateKey
-                let signTxTokenCb = await Tx.signTxToken(to, privateKey, cfg.coldWallet, contractAddress, value)
-                console.log("转出代币签名：", signTxTokenCb)
-                if (signTxTokenCb.code != 0) {
-                    console.log("签名Token失败：", signTxTokenCb)
-                    return
+            // 数据入库
+
+            let time = Date.now()
+            // 保存到redis
+            redisCli.hset(to, time, value)
+
+            // 通知后端
+            httpCli.POST(appid, "/rechargeCallback", {"address": to, "time": time, "appid": appid})
+            .then((data, error)=>{
+                if (error) {
+                    console.log("-通知后端结果出错啦->",error)
+                }else{
+                    console.log("-通知后端结果->",data)
                 }
-                let costGas = signTxTokenCb.cost * 1.1 // 转出Token所需手续费
-
-                //转出手续费签名(从热钱包转出手续费)
-                let fromHot = cfg.hotWallet
-                let fromHotPriKey = tool.getPassword(fromHot)
-                let signTxEthCb = await Tx.signTxETH(fromHot, fromHotPriKey, to, costGas)
-                console.log("转出手续费签名: ", signTxEthCb)
-                if (signTxEthCb.code != 0) {
-                    console.log("签名ETH失败：", signTxEthCb)
-                    return
-                }
-
-                //转出手续费
-                // Tx.transaction(signTxEthCb.signTx)
-
-                //转出代币
-
-            }
+            })
         }
     })
     .on('data', function(event){
@@ -86,5 +79,44 @@ async function subscribe(token) {
         // console.log("--2>", event);
         
     })
-    .on('error', console.error);
+    .on('error', function(error){
+        console.log("订阅发生错误：", error)
+    });
+}
+
+function subscribeETH(){
+    web3.eth.subscribe('newBlockHeaders', function(error, result){
+        if (error){
+            console.log(error);
+        }
+        console.log("--res-->", result)
+    })
+    // .on("data", function(blockHeader){
+    //     console.log("-s->", blockHeader)
+    // });
+}
+
+function addAddress(addr){
+    if (addr != null) {
+        addressList[addr] = true
+    }
+}
+
+function checkAddress(addr){
+    if (addr == null) {
+        return false
+    }
+    if (!addressList[addr]) {
+        return false
+    }
+    return true
+}
+
+let token = "TRX"
+start()
+function start(){
+    console.log("开始订阅合约：%s", token)
+    subscribeToken(token)
+    // console.log("开始订阅以太坊")
+    // subscribeETH()
 }
