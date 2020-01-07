@@ -57,17 +57,21 @@ async function subscribeToken(token) {
 
             // 数据入库
 
-            let time = Date.now()
             // 保存到redis
-            redisCli.hset(to, time, value)
+            redisCli.hset(to, txHash, value)
 
             // 通知后端
-            httpCli.POST(appid, "/rechargeCallback", {"address": to, "time": time, "appid": appid})
-            .then((data, error)=>{
+            let data = {"address": to, "appid": appid, "txHash": txHash}
+            httpCli.POST(appid, cfg.rechargePath, data)
+            .then((msg, error)=>{
                 if (error) {
-                    console.log("-通知后端结果出错啦->",error)
+                    console.log("收到充值，通知后端%s接口出错, data:%s, err:%s", cfg.rechargePath, data, error)
                 }else{
-                    console.log("-通知后端结果->",data)
+                    if (msg.code != 0) {
+                        console.log("收到充值，通知后端返回错误, data:%s, msg:%s", data, msg)
+                    }else{
+                        console.log("收到充值，成功通知后端, data:%s", data)
+                    }
                 }
             })
         }

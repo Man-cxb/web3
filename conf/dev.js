@@ -37,6 +37,12 @@ module.exports = {
             admin: "0xb5e3E5D51fCa7150357a46cFD3Dfd303e8f14638",
             gameHost: "127.0.0.1",
             gamePort: "80"
+        },
+        {
+            id: "backConsole", // 后台appid
+            admin: "",
+            gameHost: "127.0.0.1",
+            gamePort: "80"
         }
     ],
     redis:{
@@ -44,7 +50,8 @@ module.exports = {
         port:6379, 
         password:123456
     },
-    rechargePath: "/rechargeCallback", // 区块链收到币时通知
-    checkTokenWithdraw: "/checkTokenWithdraw", // 后台提币时，向后端校验
-    withdrawPath: "/tokenWithdrawCallback",//提现结果通知
+    rechargePath: "/rechargeCallback", // 后端接口，区块链收到币时通知
+    checkTokenWithdraw: "/checkTokenWithdraw", // 后端接口，提币时向后端校验数据
+    withdrawPath: "/tokenWithdrawCallback", // 后端接口，提现成功通知
+    backErrorPath: "/tokenTranscationError", // 后台接口，区块链转账异常时通知
 }

@@ -199,26 +199,26 @@ app.post('/queryRecharge', async function (req, res) {
     console.log("有人查询充值记录：", req.body)
     // 验证参数
     let address = req.body.address
-    let time = req.body.time
-    if (address == null || time == null) {
+    let txHash = req.body.txHash
+    if (address == null || txHash == null) {
         res.send(fail("参数不足"))
         return
     }
 
-    let ok = await redisCli.hexistsAsync(address, time)
+    let ok = await redisCli.hexistsAsync(address, txHash)
     if (!ok) {
         res.send(fail("参数错误"))
         return
     }
-    let value = await redisCli.hgetAsync(address, time)
-    redisCli.hdel(address, time)
+    let value = await redisCli.hgetAsync(address, txHash)
+    redisCli.hdel(address, txHash)
     res.send(success({"address": address, "value": value}))
 })
 
-// 提现流程 收到后台的提现请求，发送后端验证成功，转账成功通知后端
+// 提币流程 收到后台的提币请求，发送后端验证成功，转账成功通知后端
 // 模拟后端，接受token校验
 app.post('/checkTokenWithdraw', async function (req, res) {
-    console.log("收到token服务器提现校验", req.body)
+    console.log("收到token服务器提币校验", req.body)
     let token = req.body.token
     let address = req.body.address
     let value = req.body.value
@@ -227,13 +227,13 @@ app.post('/checkTokenWithdraw', async function (req, res) {
     res.send(success("后端校验成功"))
 })
 
-//模拟服务端收到token服务器提现结果回调
+//模拟服务端收到token服务器提币结果回调
 app.post('/tokenWithdrawCallback', async function (req, res) {
-    console.log("收到token服务器提现结果", req.body)
-    res.send(success("后端收到了提现的结果！"))
+    console.log("收到token服务器提币结果", req.body)
+    res.send(success("后端收到了提币的结果！"))
 })
 
-// 提现请求接口
+// 提币请求接口
 app.post('/requestWithdraw', async function (req, res) {
     console.log("收到后台提币请求", req.body)
     let token = req.body.token
@@ -264,25 +264,30 @@ app.post('/requestWithdraw', async function (req, res) {
     let password = tool.getPassword(adminAddress)
     let backup = accountsList.get(adminAddress)
     let account = web3.eth.accounts.decrypt(backup, password);
-    // let privateKey = account.privateKey
 
     res.send(success("token服务器收到提币请求"))
+    console.log("收到提币请求: order:%s, appid:%s, token:%s, toAddress:%s, amount:%s", order, appid, token, address, amount)
 
     // 向后端校验
-    let data = {"address": address, "amount": amount, "token": token, "order": order}
-    httpCli.POST(appid, "/checkTokenWithdraw", data)
-    .then((data, error)=>{
+    let data = {"address": address, "amount": amount, "token": token, "order": order, "appid": appid}
+    httpCli.POST(appid, cfg.checkTokenWithdraw, data)
+    .then((msg, error)=>{
         if (error) {
-            console.log("-向后端校验提币出错->", error)
+            console.log("请求后端%s接口出错：order:%s, msg:%s", cfg.checkTokenWithdraw, order, error.message)
+            return
         }
-        console.log("-向后端校验提币结果->", data)
-
-        // 校验成功，发起转账
-        transactionToken(token, adminAddress, account.privateKey, address, amount, appid)
+        if (msg.code != 0) {
+            console.log("提币校验失败: order:%s, msg:%s", order, msg)
+        }else{
+            console.log("提币校验成功: order:%s, msg:%s", order, msg)
+            
+            // 校验成功，发起转账
+            transactionToken(token, adminAddress, account.privateKey, address, amount, appid, order)
+        }
     })
 })
 
-async function transactionToken(token, adminAddress, privateKey, toAddr, amount, appid){
+async function transactionToken(token, adminAddress, privateKey, toAddr, amount, appid, order){
     try {
         let contractAddress = contractList.get(token)
         let filepath = path.resolve(__dirname, './src/token.json');
@@ -304,53 +309,60 @@ async function transactionToken(token, adminAddress, privateKey, toAddr, amount,
         txParms.nonce = nonce;
         let gas = await web3.eth.estimateGas(txParms);
         let gasPrice = await web3.eth.getGasPrice();
-        if (gas < 23000) {
-            gas = 23000
-        }
+        if (gas < 23000) {gas = 23000}
         txParms.gas = gas;
         txParms.gasPrice = gasPrice * 1.1; // 提高gasPrice确保转账正常
-        console.log("转账单：",txParms)
+
         let signTx = await web3.eth.accounts.signTransaction(txParms, privateKey);
         web3.eth.sendSignedTransaction(signTx.rawTransaction)
         .on('receipt', function (receipt) {
-            // console.log("receipt:", receipt)
-            console.log("提现成功：transactionHash:%s, blockNumber:%s, from:%s, to:%s, toke:%s, amount:%d", receipt.transactionHash, receipt.blockNumber, adminAddress, toAddr, token, amount)
-            // let data = [receipt.blockNumber, receipt.transactionHash, fromAddr, toAddress, token, amount, des]
+            console.log("区块链转账成功：order:%s, tx:%s, blockNumber:%s, from:%s, to:%s, toke:%s, amount:%d", order, receipt.transactionHash, receipt.blockNumber, adminAddress, toAddr, token, amount)
         })
         .on('confirmation', function (confirmationNumber, receipt) {
-            // 12次确认后再通知服务端
-            if (confirmationNumber === 12) {
-                // console.log("完成12次确认：\n" + JSON.stringify(receipt));
-                let msg ={"code": 0, "address": toAddr, "amount": amount}
-                httpCli.POST(appid, "/tokenWithdrawCallback", msg)
-                .then((data, error)=>{
+            if (confirmationNumber === 12) { 
+                // 12次确认后再通知服务端
+                let data = {"code": 0, "address": toAddr, "amount": amount, "order": order}
+                httpCli.POST(appid, cfg.withdrawPath, data)
+                .then((msg, error)=>{
                     if (error) {
-                        console.log("-通知后端提现成功出错->", error)
+                        console.log("请求后端%s接口出错：order:%s, msg:%s", cfg.withdrawPath, order, error)
+                        return
                     }
-                    console.log("-通知后端提现成功结果->", data)
+                    if (msg.code != 0) {
+                        console.log("提币成功，但通知后端失败: order:%s, msg:%s", order, msg)
+                    }else{
+                        console.log("提币成功，成功通知后端: order:%s, msg:%s", order, msg)
+                    }
                 })
             }
         })
         .on('error', function (error) {
-            console.log("提现转账事件错误：", error.message);
-            let msg ={"code": 500, "msg":"提现转账事件错误", "address": toAddr}
-            httpCli.POST(appid, "/tokenWithdrawCallback", msg)
-            .then((data, error)=>{
+            // 已经提交账单到节点了，有可能是手续费太低了，注意查看账单是不是还在节点的队列里面，如果是，需要增加手续费把原来的账单覆盖广播
+            console.log("提币转账事件错误：order:%s, err:%s", order, error.message); 
+            let data = {"code": 500, "msg":"提币转账事件错误", "address": toAddr, "order": order}
+            httpCli.POST("backConsole", cfg.backErrorPath, data)
+            .then((msg, error)=>{
                 if (error) {
-                    console.log("-通知后端提现结果出错->", error)
+                    console.log("通知后台%s接口出错：order:%s, msg:%s", cfg.backErrorPath, order, error)
+                    return
                 }
-                console.log("-通知后端提现结果->", data)
+                if (msg.code != 0) {
+                    console.log("通知后台转账错误时出错了：order:%s, msg:%s", order, msg)
+                }else{
+                    console.log("成功通知后台转账错误了：order:%s, msg:%s", order, msg)
+                }
             })
         });
     } catch (error) {
-        console.log("提现转账错误：", error.message);
-        let msg ={"code": 501, "msg":"提现转账错误", "address": toAddr}
-        httpCli.POST(appid, "/tokenWithdrawCallback", msg)
+        // 在准备账单的时候发生异常，有可能缺少了哪些必要的数据，账单还没开始广播，重新提交就可以了
+        console.log("提币转账发生异常：", error.message);
+        let msg ={"code": 501, "msg":"提币转账错误", "address": toAddr, "order": order}
+        httpCli.POST("backConsole", cfg.backErrorPath, msg)
         .then((data, error)=>{
             if (error) {
-                console.log("-通知后端提现结果出错->", error)
+                console.log("通知后台%s接口出错：order:%s, msg:%s", cfg.backErrorPath, order, error)
             }
-            console.log("-通知后端提现结果->", data)
+            console.log("-通知后端提币结果->", data)
         })
     }
 }
