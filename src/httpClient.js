@@ -1,16 +1,24 @@
 const http = require('http');
 const tool = require("./tool")
 module.exports ={
-  POST:(appid, path, data)=>{
+  POST:(appid, path, data, target)=>{
     let post_date = new Promise(function(resolve, reject){
         let cfg = tool.getGameCfg(appid)
         if (!cfg) {
             reject("缺少配置")
         }
+
+        let mHost = cfg.gameHost;
+        let mPort = cfg.gamePort;
+        if (target == "console") {
+          mHost = cfg.consoleHost;
+          mPort = cfg.consolePort;
+        }
+
         let content = JSON.stringify(data);
         let options = {
-          host: cfg.gameHost,
-          port: cfg.gamePort,
+          host: mHost,
+          port: mPort,
           path: path,
           method: 'POST',
           headers: {
@@ -30,11 +38,9 @@ module.exports ={
           res.on('end', function () {
             var resultObject = JSON.parse(responseString);
             resolve(resultObject);
-            // console.log(resultObject);
           });
         
           res.on('error', function (e) {
-            // console.log('error:', e);
             reject(e)
           });
         });

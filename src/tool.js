@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const cfg = require("../conf/conf").getCfg();
+const httpCli = require("./httpClient")
 
 function getTokenInterface(){
     let filepath = path.resolve(__dirname, './token.json');
@@ -51,10 +52,26 @@ function getGameCfg(appid){
     let appList = cfg.appList
     for (let i = 0; i < appList.length; i++) {
         if (appList[i].id == appid) { 
-            return {host: appList[i].gameHost, port: appList[i].gamePort}
+            return {gameHost: appList[i].gameHost, gamePort: appList[i].gamePort, consoleHost: appList[i].consoleHost, consolePort: appList[i].consolePort}
         }
     }
     return null
+}
+
+function sendHttp(appid, path, data, target, reason){
+    let send = new Promise(function(resolve, reject){
+        httpCli.POST(appid, path, data, target)
+        .then((msg, error)=>{
+            if (error) {
+                console.error("http请求出错：appid:%s, path:%s, data:%s, target:%s, reason:%s, error:%s", appid, path, data, target, reason, error.message)
+                reject(error.message)
+                return
+            }
+            console.log("http请求：appid:%s, path:%s, data:%s, target:%s, reason:%s, msg:%s", appid, path, data, target, reason, msg)
+            resolve("ok")
+        })
+    })
+    return send
 }
 
 exports.getTokenInterface = getTokenInterface
@@ -63,3 +80,4 @@ exports.getPassword = getPassword
 exports.getAdminAddress = getAdminAddress
 exports.checkAppid = checkAppid
 exports.getGameCfg = getGameCfg
+exports.sendHttp = sendHttp
