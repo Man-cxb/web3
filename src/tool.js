@@ -52,7 +52,7 @@ function checkAppid(appid) {
 }
 
 // 获取地址所属的appid
-function getAppidByAddress(address) {
+async function getAppidByAddress(address) {
     let id = ""
     for (let index = 0; index < cfg.appList.length; index++) {
         let appid = cfg.appList[index].id
@@ -108,3 +108,4 @@ exports.getAdminAddress = getAdminAddress
 exports.checkAppid = checkAppid
 exports.getGameCfg = getGameCfg
 exports.sendHttp = sendHttp
+exports.getAppidByAddress = getAppidByAddress
