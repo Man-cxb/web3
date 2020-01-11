@@ -8,7 +8,7 @@ const fs = require('fs');
 const cfg = require("./conf/conf").getCfg();
 const db = require("./src/db")
 const tool = require("./src/tool")
-// const httpCli = require("./src/httpClient")
+const httpCli = require("./src/httpClient")
 const md5 = require("md5-node")
 var redis = require("redis")
 var bluebird = require("bluebird")
@@ -208,7 +208,7 @@ app.post('/queryRecharge', async function (req, res) {
 
     let ok = await redisCli.hexistsAsync(address, txHash)
     if (!ok) {
-        res.send(fail("参数错误"))
+        res.send(fail("查询不到充值记录"))
         return
     }
     let value = await redisCli.hgetAsync(address, txHash)
@@ -276,8 +276,8 @@ app.post('/requestWithdraw', async function (req, res) {
     // 向后端校验
     let data = {"address": address, "amount": amount, "token": token, "order": order, "appid": appid}
 
-    let ok = await tool.sendHttp(appid, cfg.checkTokenWithdraw, data, "game", "校验提币请求")
-    if (ok) {
+    let res = await tool.sendHttp(appid, cfg.checkTokenWithdraw, data, "game", "校验提币请求")
+    if (res == "success") {
         // 校验成功，发起转账
         transactionToken(token, adminAddress, account.privateKey, address, amount, appid, order)
     }
@@ -325,18 +325,7 @@ async function transactionToken(token, adminAddress, privateKey, toAddr, amount,
             if (confirmationNumber === 12) { 
                 // 12次确认后再通知服务端
                 let data = {"code": 0, "address": toAddr, "amount": amount, "order": order, "msg": receipt.transactionHash}
-                httpCli.POST(appid, cfg.withdrawPath, data)
-                .then((msg, error)=>{
-                    if (error) {
-                        console.log("请求后端%s接口出错：order:%s, msg:%s", cfg.withdrawPath, order, error)
-                        return
-                    }
-                    if (msg.code != 0) {
-                        console.log("提币成功，但通知后端失败: order:%s, msg:%s", order, msg)
-                    }else{
-                        console.log("提币成功，成功通知后端: order:%s, msg:%s", order, msg)
-                    }
-                })
+                tool.sendHttp(appid, cfg.withdrawPath, data, "game", "转账操作")
             }
         })
         .on('error', function (error) {
@@ -344,36 +333,14 @@ async function transactionToken(token, adminAddress, privateKey, toAddr, amount,
             console.log("提币转账事件错误：order:%s, err:%s", order, error.message); 
             let sign = md5(order + cfg.backKey)
             let data = {"code": 500, "msg":"提币转账事件错误", "sign": sign, "order_num": order}
-            httpCli.POST(appid, cfg.backErrorPath, data, true)
-            .then((msg, error)=>{
-                if (error) {
-                    console.log("通知后台%s接口出错：order:%s, msg:%s", cfg.backErrorPath, order, error)
-                    return
-                }
-                if (msg.code != 0) {
-                    console.log("通知后台转账错误时出错了：order:%s, msg:%s", order, msg)
-                }else{
-                    console.log("成功通知后台转账错误了：order:%s, msg:%s", order, msg)
-                }
-            })
+            tool.sendHttp(appid, cfg.backErrorPath, data, "console", "转账操作")
         });
     } catch (error) {
         // 在准备账单的时候发生异常，有可能缺少了哪些必要的数据，账单还没开始广播，重新提交就可以了
         console.log("提币转账发生异常：", error.message);
         let sign = md5(order + cfg.backKey)
-        let msg ={"code": 501, "msg":"提币转账错误", "sign": sign, "order": order}
-        httpCli.POST(appid, cfg.backErrorPath, msg, true)
-        .then((data, error)=>{
-            if (error) {
-                console.log("通知后台%s接口出错：order:%s, msg:%s", cfg.backErrorPath, order, error)
-                return
-            }
-            if (msg.code != 0) {
-                console.log("提币转账发生异常, 通知后端返回错误：", msg)
-            }else{
-                console.log("提币转账发生异常, 成功通知后端：", msg)
-            }
-        })
+        let data ={"code": 501, "msg":"提币转账错误", "sign": sign, "order": order}
+        tool.sendHttp(appid, cfg.backErrorPath, data, "console", "转账操作")
     }
 }
 

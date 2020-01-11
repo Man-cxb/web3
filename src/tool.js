@@ -2,6 +2,10 @@ const path = require('path');
 const fs = require('fs');
 const cfg = require("../conf/conf").getCfg();
 const httpCli = require("./httpClient")
+var redis = require("redis")
+var bluebird = require("bluebird")
+var redisCli = redis.createClient(cfg.redis);
+bluebird.promisifyAll(redis.RedisClient.prototype);
 
 function getTokenInterface(){
     let filepath = path.resolve(__dirname, './token.json');
@@ -47,8 +51,25 @@ function checkAppid(appid) {
     return false
 }
 
+// 获取地址所属的appid
+function getAppidByAddress(address) {
+    let id = ""
+    for (let index = 0; index < cfg.appList.length; index++) {
+        let appid = cfg.appList[index].id
+        let ok = await redisCli.hexistsAsync(appid, address)
+        if (ok == 1) {
+            id = appid
+            break
+        }
+    }
+    if (id == "") {
+        return false
+    }
+    return id
+}
+
 // 获取后端地址
-function getGameCfg(appid){
+function getGameCfg(appid) {
     let appList = cfg.appList
     for (let i = 0; i < appList.length; i++) {
         if (appList[i].id == appid) { 
@@ -58,6 +79,7 @@ function getGameCfg(appid){
     return null
 }
 
+// 发送http
 function sendHttp(appid, path, data, target, reason){
     let send = new Promise(function(resolve, reject){
         httpCli.POST(appid, path, data, target)
@@ -68,7 +90,12 @@ function sendHttp(appid, path, data, target, reason){
                 return
             }
             console.log("http请求：appid:%s, path:%s, data:%s, target:%s, reason:%s, msg:%s", appid, path, data, target, reason, msg)
-            resolve("ok")
+            if (msg.code == 0){
+                resolve("success")
+            }else{
+                resolve("false")
+            }
+
         })
     })
     return send

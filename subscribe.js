@@ -35,24 +35,15 @@ async function subscribeToken(token) {
         }else{
             let data = event.returnValues
             let to = data._to
-            let appid = ""
-            for (let index = 0; index < cfg.appList.length; index++) {
-                console.log(cfg.appList[index])
-                let id = cfg.appList[index].id
-                let ok = await redisCli.hexistsAsync(id, to)
-                if (ok == 1) {
-                    appid = id
-                }
-            }
-            if (appid == "") {
-                return
-            }
-
             let txHash = event.transactionHash
             let block = event.blockNumber
             let from = data._from
-            
             let value = parseInt(data._value) / mod
+            
+            let appid = tool.getAppidByAddress(to)
+            if (!appid) {
+                return
+            }
             console.log("有转入代币： tx:%s, block:%s, form:%s, to:%s, value:%s", txHash, block, from, to, value);
 
             // 数据入库
@@ -62,18 +53,23 @@ async function subscribeToken(token) {
 
             // 通知后端
             let data = {"address": to, "appid": appid, "txHash": txHash}
-            httpCli.POST(appid, cfg.rechargePath, data)
-            .then((msg, error)=>{
-                if (error) {
-                    console.log("收到充值，通知后端%s接口出错, data:%s, err:%s", cfg.rechargePath, data, error)
-                }else{
-                    if (msg.code != 0) {
-                        console.log("收到充值，通知后端返回错误, data:%s, msg:%s", data, msg)
-                    }else{
-                        console.log("收到充值，成功通知后端, data:%s", data)
-                    }
-                }
-            })
+            let res = await tool.sendHttp(appid, cfg.rechargePath, data, "game", "充值到账")
+            if (res != "success") {
+                // 通知后端失败时，保存数据，定时再请求
+                redisCli.hset("resend", txHash, data)
+            }
+            // httpCli.POST(appid, cfg.rechargePath, data)
+            // .then((msg, error)=>{
+            //     if (error) {
+            //         console.log("收到充值，通知后端%s接口出错, data:%s, err:%s", cfg.rechargePath, data, error)
+            //     }else{
+            //         if (msg.code != 0) {
+            //             console.log("收到充值，通知后端返回错误, data:%s, msg:%s", data, msg)
+            //         }else{
+            //             console.log("收到充值，成功通知后端, data:%s", data)
+            //         }
+            //     }
+            // })
         }
     })
     .on('data', function(event){
@@ -123,4 +119,16 @@ function start(){
     subscribeToken(token)
     // console.log("开始订阅以太坊")
     // subscribeETH()
+
+    // 定时器
+    setInterval(resend, 600 * 1000); // 时间单位毫秒, 间隔10分钟
+}
+
+async function resend() {
+    let arr = await redisCli.hgetall("resend")
+    console.log("通知后端失败列表：", arr)
+    // TODO:重新通知后端
+
+    // TODO:移除已通知成功的
+
 }
