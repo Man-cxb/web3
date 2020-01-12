@@ -33,6 +33,7 @@ module.exports = {
     coldWallet: "0xb5e3E5D51fCa7150357a46cFD3Dfd30000000000", // 代币汇总地址
     appList: [
         {
+            isOpenWithdraw: 1, // 是否开放提币
             id: "id123",
             admin: "0xb5e3E5D51fCa7150357a46cFD3Dfd303e8f14638",
             gameHost: "127.0.0.1",

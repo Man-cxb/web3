@@ -1,10 +1,10 @@
 const path = require('path');
 const fs = require('fs');
 const cfg = require("../conf/conf").getCfg();
-const httpCli = require("./httpClient")
-var redis = require("redis")
-var bluebird = require("bluebird")
-var redisCli = redis.createClient(cfg.redis);
+const request = require('request-promise');
+const redis = require("redis")
+const bluebird = require("bluebird")
+const redisCli = redis.createClient(cfg.redis);
 bluebird.promisifyAll(redis.RedisClient.prototype);
 
 function getTokenInterface(){
@@ -25,7 +25,7 @@ function bufferToJson(buff){
 
 // 获取密码，目前为配置密码 拼接 地址后6位，可根据需要修改
 function getPassword(address){
-    var str = address.substr(address.length - 6, address.length);
+    let str = address.substr(address.length - 6, address.length);
     return cfg.accountPassword + str
 }
 
@@ -73,7 +73,14 @@ function getGameCfg(appid) {
     let appList = cfg.appList
     for (let i = 0; i < appList.length; i++) {
         if (appList[i].id == appid) { 
-            return {gameHost: appList[i].gameHost, gamePort: appList[i].gamePort, consoleHost: appList[i].consoleHost, consolePort: appList[i].consolePort}
+            let msg = {
+                isOpenWithdraw: appList[i].isOpenWithdraw, 
+                gameHost: appList[i].gameHost, 
+                gamePort: appList[i].gamePort, 
+                consoleHost: appList[i].consoleHost, 
+                consolePort: appList[i].consolePort
+            }
+            return msg
         }
     }
     return null
@@ -81,22 +88,38 @@ function getGameCfg(appid) {
 
 // 发送http
 function sendHttp(appid, path, data, target, reason){
-    let send = new Promise(function(resolve, reject){
-        httpCli.POST(appid, path, data, target)
-        .then((msg, error)=>{
-            if (error) {
-                console.error("http请求出错：appid:%s, path:%s, data:%s, target:%s, reason:%s, error:%s", appid, path, data, target, reason, error.message)
-                reject(error.message)
-                return
-            }
-            console.log("http请求：appid:%s, path:%s, data:%s, target:%s, reason:%s, msg:%s", appid, path, data, target, reason, msg)
-            if (msg.code == 0){
-                resolve("success")
-            }else{
-                resolve("false")
-            }
+    let send = new Promise(function(resolve, reject){ 
+        let cfg = getGameCfg(appid)
+        if (!cfg) {
+            reject("缺少配置")
+        }
 
-        })
+        let mHost = cfg.gameHost;
+        let mPort = cfg.gamePort;
+        if (target == "console") {
+          mHost = cfg.consoleHost;
+          mPort = cfg.consolePort;
+        }
+        let options = {
+            method: 'POST',
+            uri: 'http://' + mHost + ':' + mPort + path,
+            body: data,
+            json: true
+        };
+
+        request(options)
+            .then(function (msg) {
+                console.log("http请求：appid:%s, path:%s, data:%s, target:%s, reason:%s, msg:%s", appid, path, data, target, reason, msg)
+                if (msg.code == 0) {
+                    resolve({"code": 0})
+                }else{
+                    resolve(msg)
+                }
+            })
+            .catch(function (error) {
+                console.error("http请求出错：appid:%s, path:%s, data:%s, target:%s, reason:%s, error:%s", appid, path, data, target, reason, error.message)
+                reject({"code": 404, "msg": error.message})
+            });
     })
     return send
 }

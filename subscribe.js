@@ -1,12 +1,7 @@
 const Web3 = require('web3');
 const cfg = require("./conf/conf").getCfg();
-// const path = require('path');
-// const fs = require('fs');
-// const Tx = require("./src/Tx")
 const db = require("./src/db")
 const tool = require("./src/tool")
-const httpCli = require("./src/httpClient")
-
 var redis = require("redis")
 var bluebird = require("bluebird")
 var redisCli = redis.createClient(cfg.redis);
@@ -15,8 +10,6 @@ bluebird.promisifyAll(redis.RedisClient.prototype);
 
 var web3 = new Web3(cfg["ws"]);
 let contractList = new Map(cfg.contractAddr)
-let addressList = {}
-
 
 async function subscribeToken(token) {
     if (!contractList.has(token)) {
@@ -52,24 +45,12 @@ async function subscribeToken(token) {
             redisCli.hset(to, txHash, value)
 
             // 通知后端
-            let data = {"address": to, "appid": appid, "txHash": txHash}
-            let res = await tool.sendHttp(appid, cfg.rechargePath, data, "game", "充值到账")
+            let msg = {"address": to, "appid": appid, "txHash": txHash}
+            let res = await tool.sendHttp(appid, cfg.rechargePath, msg, "game", "充值到账")
             if (res != "success") {
                 // 通知后端失败时，保存数据，定时再请求
-                redisCli.hset("resend", txHash, data)
+                redisCli.hset("resend", txHash, msg)
             }
-            // httpCli.POST(appid, cfg.rechargePath, data)
-            // .then((msg, error)=>{
-            //     if (error) {
-            //         console.log("收到充值，通知后端%s接口出错, data:%s, err:%s", cfg.rechargePath, data, error)
-            //     }else{
-            //         if (msg.code != 0) {
-            //             console.log("收到充值，通知后端返回错误, data:%s, msg:%s", data, msg)
-            //         }else{
-            //             console.log("收到充值，成功通知后端, data:%s", data)
-            //         }
-            //     }
-            // })
         }
     })
     .on('data', function(event){
@@ -88,47 +69,37 @@ function subscribeETH(){
     web3.eth.subscribe('newBlockHeaders', function(error, result){
         if (error){
             console.log(error);
+        }else{
+            console.log("以太坊区块高度：", result.number)
         }
-        console.log("--res-->", result)
     })
-    // .on("data", function(blockHeader){
-    //     console.log("-s->", blockHeader)
-    // });
 }
 
-function addAddress(addr){
-    if (addr != null) {
-        addressList[addr] = true
-    }
-}
-
-function checkAddress(addr){
-    if (addr == null) {
-        return false
-    }
-    if (!addressList[addr]) {
-        return false
-    }
-    return true
-}
-
-let token = "TRX"
 start()
 function start(){
+    let token = "TRX"
     console.log("开始订阅合约：%s", token)
     subscribeToken(token)
-    // console.log("开始订阅以太坊")
-    // subscribeETH()
+    console.log("开始订阅以太坊")
+    subscribeETH()
 
     // 定时器
-    setInterval(resend, 600 * 1000); // 时间单位毫秒, 间隔10分钟
+    setInterval(resendToGame, 600 * 1000); // 时间单位毫秒, 间隔10分钟
 }
 
-async function resend() {
-    let arr = await redisCli.hgetall("resend")
-    console.log("通知后端失败列表：", arr)
-    // TODO:重新通知后端
+async function resendToGame() {
+    let arr = await redisCli.hgetallAsync("resend")
+    console.log("需要重新通知后端列表：", arr)
 
-    // TODO:移除已通知成功的
-
+    for (const key in arr) {
+        let data = arr[key]
+        let res = await tool.sendHttp(data.appid, cfg.rechargePath, data, "game", "充值到账")
+        if (res != "success") {
+            // 通知后端失败时，保存数据，定时再请求
+            redisCli.hset("resend", key, data)
+        }else{
+            // 通知成功，移除记录
+            redisCli.hdel("resend", key)
+        }
+    }
 }

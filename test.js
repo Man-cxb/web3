@@ -55,3 +55,30 @@ async function tt(){
 // const clas = require("./src/clas")
 // let aa = new clas(1,1,1,1,1)
 // console.log(aa)
+
+
+// var request = require('request');
+// request.post("http://127.0.0.2:1686/checkTokenWithdraw",{"aa":123}, function(err, httpResponse, body){
+//     console.log("---1>", err)
+//     // console.log("---2>", httpResponse)
+//     console.log("---3>", body)
+// })
+var redis = require("redis")
+const cfg = require("./conf/conf").getCfg();
+var redisCli = redis.createClient(cfg.redis);
+const bluebird = require("bluebird")
+bluebird.promisifyAll(redis.RedisClient.prototype);
+gg()
+async function gg(){
+    await redisCli.hset("arr", "k1", 1)
+    await redisCli.hset("arr", "k2", 2)
+    let d = await redisCli.hgetallAsync("arr")
+    for (const key in d) {
+        if (d.hasOwnProperty(key)) {
+            const element = d[key];
+            console.log(element)
+            
+        }
+    }
+
+}

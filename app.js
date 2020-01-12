@@ -6,13 +6,13 @@ const Web3 = require('web3');
 const path = require('path');
 const fs = require('fs');
 const cfg = require("./conf/conf").getCfg();
+const request = require('request-promise');
 const db = require("./src/db")
 const tool = require("./src/tool")
-const httpCli = require("./src/httpClient")
 const md5 = require("md5-node")
-var redis = require("redis")
-var bluebird = require("bluebird")
-var redisCli = redis.createClient(cfg.redis);
+const redis = require("redis")
+const bluebird = require("bluebird")
+const redisCli = redis.createClient(cfg.redis);
 bluebird.promisifyAll(redis.RedisClient.prototype);
 
 app.use(morgan('dev'));
@@ -37,7 +37,6 @@ db.query("t_account", null, function(res){
             accountsList.set(data.address, backup)
             redisCli.hset(data.appid, data.address, true)
         }
-        // console.log(accounts)
     } 
 })
 
@@ -54,12 +53,6 @@ app.use('*',(req, res, next) => {
     res.send(fail("无效的请求"))
 })
 
-// 测试用
-app.get('/', function (req, res) {
-    res.send(success("ok"));
-});
-
-
 //获取以太坊主链代币数量
 app.get('/GetEthBalance', async function (req, res) {
     if (req.query.address == "" || req.query.address == null) {
@@ -68,7 +61,6 @@ app.get('/GetEthBalance', async function (req, res) {
     }
     // console.log(req.query.address)
     let check = web3.utils.isAddress(req.query.address)
-    console.log(check)
     if (check == false) {
         res.send(fail("请输入有效的地址！"))
         return
@@ -169,6 +161,35 @@ app.get('/CreateAccount', function (req, res) {
     })
 })
 
+// 检查地址是否合法
+app.get('/checkAddress', function (req, res) {
+    let address = req.query.address
+    if (!address) {
+        res.send(fail('{"msg":"缺少参数！","errorCode":2}'))
+        return
+    }
+    let appid = req.query.appid
+    if (!appid) {
+        res.send(fail('{"msg":"缺少参数！","errorCode":2}'))
+        return
+    }
+
+    let cfg = tool.getGameCfg(appid)
+    if (!cfg) {
+        res.send(fail('{"msg":"缺少配置","errorCode":3}'))
+        return
+    }
+    if (cfg.isOpenWithdraw!=1){
+        res.send(fail('{"msg":"未开放提币","errorCode":4}'))
+        return
+    }
+    let ok = web3.utils.isAddress(address)
+    if (ok) {
+        res.send(success(true))
+    }else{
+        res.send(fail('{"msg":"地址不合法","errorCode":5}'))
+    }
+})
 
 // 充值流程 检测到有充值，通知后端，后端查询返回充值数量
 //模拟后端，区块链检测到有代币充值，通知这个接口
@@ -176,7 +197,7 @@ app.post('/rechargeCallback', async function (req, res) {
     console.log("收到充值回调", req.body)
     //拿到有充值成功的地址和时间
     let address = req.body.address
-    let time = req.body.time
+    let txHash = req.body.txHash
     let appid = req.body.appid
     if (address == null || time == null) {
         res.send(fail("参数不足"))
@@ -185,13 +206,9 @@ app.post('/rechargeCallback', async function (req, res) {
     res.send(success("服务端收到充值信息"))
 
     //请求充值地址的余额
-    let data = {"address": address, "time": time}
-    httpCli.POST(appid, "/queryRecharge", data)
-    .then((data, error)=>{
-        if (error) {
-            console.log("-充值结果查询出错->", error)
-        }
-        console.log("-充值结果查询结果->", data)
+    let data = {"address": address, "txHash": txHash}
+    request.post("http://127.0.0.1:1686/queryRecharge", data, function(e, r, body){
+        console.log("服务端查询充值结果：", body)
     })
 })
 
@@ -236,7 +253,7 @@ app.post('/tokenWithdrawCallback', async function (req, res) {
 
 // 提币请求接口
 app.post('/requestWithdraw', async function (req, res) {
-    console.log("收到后台提币请求", req.body)
+    console.log("收到后台提币请求:", req.body)
     let token = req.body.token
     let address = req.body.address
     let amount = Number(req.body.amount)
@@ -265,6 +282,14 @@ app.post('/requestWithdraw', async function (req, res) {
         return
     }
 
+    let has = redisCli.hexistsAsync("pending", order)
+    if (has) {
+        res.send(fail("订单处理中，不可重复提交！"))
+        return
+    }else{
+        redisCli.hset("pending", order, true)
+    }
+
     res.send(success("token服务器收到提币请求"))
     console.log("收到提币请求: order:%s, appid:%s, token:%s, toAddress:%s, amount:%s", order, appid, token, address, amount)
 
@@ -276,10 +301,12 @@ app.post('/requestWithdraw', async function (req, res) {
     // 向后端校验
     let data = {"address": address, "amount": amount, "token": token, "order": order, "appid": appid}
 
-    let res = await tool.sendHttp(appid, cfg.checkTokenWithdraw, data, "game", "校验提币请求")
-    if (res == "success") {
+    let msg = await tool.sendHttp(appid, cfg.checkTokenWithdraw, data, "game", "校验提币请求")
+    if (msg.code == 0) {
         // 校验成功，发起转账
         transactionToken(token, adminAddress, account.privateKey, address, amount, appid, order)
+    }else{
+        console.log("校验提币请求失败，order:", order, msg)
     }
 })
 
@@ -312,7 +339,7 @@ async function transactionToken(token, adminAddress, privateKey, toAddr, amount,
         txParms.nonce = nonce;
         let gas = await web3.eth.estimateGas(txParms);
         let gasPrice = await web3.eth.getGasPrice();
-        if (gas < 23000) {gas = 23000}
+        if (gas < 30000) {gas = 30000}
         txParms.gas = gas;
         txParms.gasPrice = gasPrice * 1.1; // 提高gasPrice确保转账正常
 
@@ -326,6 +353,7 @@ async function transactionToken(token, adminAddress, privateKey, toAddr, amount,
                 // 12次确认后再通知服务端
                 let data = {"code": 0, "address": toAddr, "amount": amount, "order": order, "msg": receipt.transactionHash}
                 tool.sendHttp(appid, cfg.withdrawPath, data, "game", "转账操作")
+                redisCli.hdel("pending", order)
             }
         })
         .on('error', function (error) {
@@ -334,6 +362,7 @@ async function transactionToken(token, adminAddress, privateKey, toAddr, amount,
             let sign = md5(order + cfg.backKey)
             let data = {"code": 500, "msg":"提币转账事件错误", "sign": sign, "order_num": order}
             tool.sendHttp(appid, cfg.backErrorPath, data, "console", "转账操作")
+            redisCli.hdel("pending", order)
         });
     } catch (error) {
         // 在准备账单的时候发生异常，有可能缺少了哪些必要的数据，账单还没开始广播，重新提交就可以了
@@ -341,6 +370,7 @@ async function transactionToken(token, adminAddress, privateKey, toAddr, amount,
         let sign = md5(order + cfg.backKey)
         let data ={"code": 501, "msg":"提币转账错误", "sign": sign, "order": order}
         tool.sendHttp(appid, cfg.backErrorPath, data, "console", "转账操作")
+        redisCli.hdel("pending", order)
     }
 }
 
