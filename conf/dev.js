@@ -7,8 +7,7 @@ module.exports = {
     chainId: 3,
     //ropsten网络测试合约
     contractAddr: [
-        ["TRX", "0xb37867855b769834dc6e44f86325b046d668541f"],
-        ["EnerZ", "0x7bd0ae0e238d0ea2630b8aa3c4b9ad6248635ca6"]
+        ["TRX", "0xb37867855b769834dc6e44f86325b046d668541f"]
     ],
     mysql: {
         host: '127.0.0.1',

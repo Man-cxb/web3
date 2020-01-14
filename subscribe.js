@@ -33,23 +33,25 @@ async function subscribeToken(token) {
             let from = data._from
             let value = parseInt(data._value) / mod
             
-            let appid = tool.getAppidByAddress(to)
+            let appid = await tool.getAppidByAddress(to)
             if (!appid) {
                 return
             }
-            console.log("有转入代币： tx:%s, block:%s, form:%s, to:%s, value:%s", txHash, block, from, to, value);
+            console.log("有转入代币：appid:%s, tx:%s, block:%s, form:%s, to:%s, value:%s", appid, txHash, block, from, to, value);
 
             // 数据入库
+            db.dbmgr("t_recharge", "save", [appid, txHash, from, to, token, value, Date.now(), ""])
 
-            // 保存到redis
+            // 保存到redis, 后端查询后删除
             redisCli.hset(to, txHash, value)
 
             // 通知后端
-            let msg = {"address": to, "appid": appid, "txHash": txHash}
+            let msg = {"address": to, "appid": appid, "txHash": txHash, "token": token}
             let res = await tool.sendHttp(appid, cfg.rechargePath, msg, "game", "充值到账")
-            if (res != "success") {
+            if (res.code != 0) {
                 // 通知后端失败时，保存数据，定时再请求
-                redisCli.hset("resend", txHash, msg)
+                // redisCli.hset("resend", txHash, msg)
+                console.log("区块链收到充值，但通知后端出错了~~", res)
             }
         }
     })
@@ -77,9 +79,12 @@ function subscribeETH(){
 
 start()
 function start(){
-    let token = "TRX"
-    console.log("开始订阅合约：%s", token)
-    subscribeToken(token)
+    cfg.contractAddr.forEach(element => {
+        let token = element[0]
+        console.log("开始订阅合约：%s", token)
+        subscribeToken(token)
+    });
+
     console.log("开始订阅以太坊")
     subscribeETH()
 

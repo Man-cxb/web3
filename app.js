@@ -12,6 +12,7 @@ const tool = require("./src/tool")
 const md5 = require("md5-node")
 const redis = require("redis")
 const bluebird = require("bluebird")
+const bigNumber = require('big-number')
 const redisCli = redis.createClient(cfg.redis);
 bluebird.promisifyAll(redis.RedisClient.prototype);
 
@@ -27,17 +28,18 @@ console.log("开启http服务，端口：1686")
 let contractList = new Map(cfg.contractAddr) // 合约地址
 let accountsList = new Map(); // 账户列表
 
-db.query("t_account", null, function(res){
-    if (res.code != 0) {
-        console.log(res.msg)
-    }else{
-        for (let i = 0; i < res.msg.length; i++) {
-            const data = res.msg[i];
+db.dbmgr("t_account", "query")
+.then((record)=>{
+    if (record.code == 0) {
+        for (let i = 0; i < record.msg.length; i++) {
+            const data = record.msg[i];
             const backup = tool.bufferToJson(data.backup)
             accountsList.set(data.address, backup)
             redisCli.hset(data.appid, data.address, true)
         }
-    } 
+    }else{
+        console.log("查询数据库出错！！")
+    }
 })
 
 app.use('*',(req, res, next) => {
@@ -99,7 +101,7 @@ app.get('/GetTokenBalance', async function (req, res) {
 })
 
 // 导入私钥
-app.post('/importPrivateKey', function (req, res) {
+app.post('/importPrivateKey', async function (req, res) {
     let appid = req.body.appid
     if (!tool.checkAppid(appid)) {
         res.send(fail("appid不支持！"))
@@ -122,21 +124,19 @@ app.post('/importPrivateKey', function (req, res) {
 
     // 数据入库
     let time = Date.now()
-    db.query_obj("t_account", [wallet.address, JSON.stringify(backfile), appid, time, "user input"], function(e){
-        if (e.code != 0) {
-            console.log("存储数据出错：", e)
-            res.send(fail(e))
-        }else{
-            console.log("成功导入账号，地址：%s，私钥尾号：%s", wallet.address, privateKey.substr(privateKey.length - 6, privateKey.length))
-            accountsList.set(wallet.address, backfile)
-            redisCli.hset(appid, wallet.address, true)
-            res.send(success("ok"))
-        }
-    })
+    let msg = await db.dbmgr("t_account", "save", [wallet.address, JSON.stringify(backfile), appid, time, "user input"])
+    if (msg.code == 0) {
+        console.log("成功导入账号，地址：%s，私钥尾号：%s", wallet.address, privateKey.substr(privateKey.length - 6, privateKey.length))
+        accountsList.set(wallet.address, backfile)
+        redisCli.hset(appid, wallet.address, true)
+        res.send(success("ok"))
+    }else{
+        res.send(fail(msg))
+    }
 })
 
 // 通过官方web3创建私钥和备份文件
-app.get('/CreateAccount', function (req, res) {
+app.get('/CreateAccount', async function (req, res) {
     let appid = req.query.appid
     if (!tool.checkAppid(appid)) {
         res.send(fail("appid不支持！"))
@@ -148,17 +148,15 @@ app.get('/CreateAccount', function (req, res) {
     // console.log("地址：%s，私钥：%s", wallet.address, wallet.privateKey)
     // 数据入库
     let time = Date.now()
-    db.query_obj("t_account", [wallet.address, JSON.stringify(backfile), appid, time, "system create"], function(e){
-        if (e.code != 0) {
-            console.log("存储数据出错：", e)
-            res.send(fail(e))
-        }else{
-            console.log("成功创建地址：%s", wallet.address)
-            accountsList.set(wallet.address, backfile)
-            redisCli.hset(appid, wallet.address, true)
-            res.send(success({"address": wallet.address}))
-        }
-    })
+    let msg = await db.dbmgr("t_account", "save", [wallet.address, JSON.stringify(backfile), appid, time, "system create"])
+    if (msg.code == 0) {
+        console.log("成功创建地址：%s", wallet.address)
+        accountsList.set(wallet.address, backfile)
+        redisCli.hset(appid, wallet.address, true)
+        res.send(success("ok"))
+    }else{
+        res.send(fail(msg))
+    }
 })
 
 // 检查地址是否合法
@@ -224,7 +222,7 @@ app.post('/queryRecharge', async function (req, res) {
     }
 
     let ok = await redisCli.hexistsAsync(address, txHash)
-    if (!ok) {
+    if (ok == 0) {
         res.send(fail("查询不到充值记录"))
         return
     }
@@ -282,8 +280,9 @@ app.post('/requestWithdraw', async function (req, res) {
         return
     }
 
-    let has = redisCli.hexistsAsync("pending", order)
-    if (has) {
+    // 同一个order防止重复提交
+    let has = await redisCli.hexistsAsync("pending", order)
+    if (has == 1) {
         res.send(fail("订单处理中，不可重复提交！"))
         return
     }else{
@@ -320,10 +319,11 @@ async function transactionToken(token, adminAddress, privateKey, toAddr, amount,
 
         let decimals = await contract.methods.decimals().call();
         let toAmount = amount * Math.pow(10, decimals);
-        let fromBalance = contract.methods.balanceOf(adminAddress).call(); // 获取转出账户的余额
+        let fromBalance = await contract.methods.balanceOf(adminAddress).call(); // 获取转出账户的余额
         if (fromBalance < toAmount) {
             console.log("balance:%s, toAmount:%s", fromBalance, toAmount)
-            res.send(fail("账户token不足"))
+            tool.sendHttp(appid, cfg.backErrorPath, fail("账户token不足"), "console", "转账操作")
+            redisCli.hdel("pending", order)
             return
         }
 
@@ -347,13 +347,16 @@ async function transactionToken(token, adminAddress, privateKey, toAddr, amount,
         web3.eth.sendSignedTransaction(signTx.rawTransaction)
         .on('receipt', function (receipt) {
             console.log("区块链转账成功：order:%s, tx:%s, blockNumber:%s, from:%s, to:%s, toke:%s, amount:%d", order, receipt.transactionHash, receipt.blockNumber, adminAddress, toAddr, token, amount)
+            redisCli.hdel("pending", order)
+
+            // 成功提现的交易录入数据库
+            db.dbmgr("t_withdraw", "save", [appid, receipt.transactionHash, adminAddress, toAddr, token, amount, Date.now(), ""])
         })
         .on('confirmation', function (confirmationNumber, receipt) {
             if (confirmationNumber === 12) { 
                 // 12次确认后再通知服务端
                 let data = {"code": 0, "address": toAddr, "amount": amount, "order": order, "msg": receipt.transactionHash}
                 tool.sendHttp(appid, cfg.withdrawPath, data, "game", "转账操作")
-                redisCli.hdel("pending", order)
             }
         })
         .on('error', function (error) {
@@ -368,7 +371,7 @@ async function transactionToken(token, adminAddress, privateKey, toAddr, amount,
         // 在准备账单的时候发生异常，有可能缺少了哪些必要的数据，账单还没开始广播，重新提交就可以了
         console.log("提币转账发生异常：", error.message);
         let sign = md5(order + cfg.backKey)
-        let data ={"code": 501, "msg":"提币转账错误", "sign": sign, "order": order}
+        let data = {"code": 501, "msg":"提币转账错误", "sign": sign, "order_num": order}
         tool.sendHttp(appid, cfg.backErrorPath, data, "console", "转账操作")
         redisCli.hdel("pending", order)
     }
