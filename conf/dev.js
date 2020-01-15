@@ -20,7 +20,9 @@ module.exports = {
     },
     insertSql: [
         ["t_account", "insert into t_account (address, backup, appid, time, des) value (?,?,?,?,?);",],
-        ["t_transaction", "insert into t_transaction (blockNum, txHash, fromAddress, toAddress, coin, amount, des) value (?,?,?,?,?,?,?);",]
+        ["t_transaction", "insert into t_transaction (blockNum, txHash, fromAddress, toAddress, coin, amount, des) value (?,?,?,?,?,?,?);",],
+        ["t_recharge", "insert into t_recharge (appid, txHash, fromAddress, toAddress, coin, amount, time, des) value (?,?,?,?,?,?,?,?);",],
+        ["t_withdraw", "insert into t_withdraw (appid, txHash, fromAddress, toAddress, coin, amount, time, des) value (?,?,?,?,?,?,?,?);",]
     ],
     querySql: [
         ["t_account", "select * from t_account"],
@@ -39,7 +41,8 @@ module.exports = {
             gamePort: "1686",
             consoleHost: "127.0.0.1",// 后台id
             consolePort: "1686",
-        }
+            subscribes: "TRX"
+        },
     ],
     redis:{
         host:"127.0.0.1", 

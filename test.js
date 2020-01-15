@@ -55,13 +55,3 @@ async function tt(){
 // const clas = require("./src/clas")
 // let aa = new clas(1,1,1,1,1)
 // console.log(aa)
-
-
-
-const db = require("./src/db")
-dd()
-async function dd(){
-    let data = await db.dbmgr("t_account", "query")
-    console.log("-->", data)
-
-}

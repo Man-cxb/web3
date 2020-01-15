@@ -37,6 +37,13 @@ async function subscribeToken(token) {
             if (!appid) {
                 return
             }
+
+            let appCfg = tool.getGameCfg(appid)
+            if (appCfg.subscribes != token) {
+                console.log("地址与转入代币不符：appid:%s, address:%s, token:%s", appid, to, token)
+                return
+            }
+
             console.log("有转入代币：appid:%s, tx:%s, block:%s, form:%s, to:%s, value:%s", appid, txHash, block, from, to, value);
 
             // 数据入库
@@ -45,7 +52,6 @@ async function subscribeToken(token) {
             // 保存到redis, 后端查询后删除
             redisCli.hset(to, txHash, value)
 
-            // 通知后端
             let msg = {"address": to, "appid": appid, "txHash": txHash, "token": token}
             let res = await tool.sendHttp(appid, cfg.rechargePath, msg, "game", "充值到账")
             if (res.code != 0) {
@@ -89,7 +95,7 @@ function start(){
     subscribeETH()
 
     // 定时器
-    setInterval(resendToGame, 600 * 1000); // 时间单位毫秒, 间隔10分钟
+    // setInterval(resendToGame, 600 * 1000); // 时间单位毫秒, 间隔10分钟
 }
 
 async function resendToGame() {

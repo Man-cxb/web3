@@ -78,7 +78,8 @@ function getGameCfg(appid) {
                 gameHost: appList[i].gameHost, 
                 gamePort: appList[i].gamePort, 
                 consoleHost: appList[i].consoleHost, 
-                consolePort: appList[i].consolePort
+                consolePort: appList[i].consolePort,
+                subscribes: appList[i].subscribes
             }
             return msg
         }

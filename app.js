@@ -12,12 +12,11 @@ const tool = require("./src/tool")
 const md5 = require("md5-node")
 const redis = require("redis")
 const bluebird = require("bluebird")
-const bigNumber = require('big-number')
 const redisCli = redis.createClient(cfg.redis);
 bluebird.promisifyAll(redis.RedisClient.prototype);
 
 app.use(morgan('dev'));
-app.use(bodyParser.urlencoded({ extended: false }))
+// app.use(bodyParser.urlencoded({ extended: false }))
 app.use(bodyParser.json())
 const web3 = new Web3(cfg["http"]);
 
@@ -153,7 +152,7 @@ app.get('/CreateAccount', async function (req, res) {
         console.log("成功创建地址：%s", wallet.address)
         accountsList.set(wallet.address, backfile)
         redisCli.hset(appid, wallet.address, true)
-        res.send(success("ok"))
+        res.send(success({"address": wallet.address}))
     }else{
         res.send(fail(msg))
     }
@@ -189,6 +188,40 @@ app.get('/checkAddress', function (req, res) {
     }
 })
 
+// 关于redis的查询和删除
+app.get('/redis', async function (req, res) {
+    let op = req.query.op
+    let key = req.query.key
+    let value = req.query.value
+    if (op == null || key == null) {
+        res.send("缺少参数！")
+        return
+    }
+    if (op == "query") {
+        let ok = await redisCli.hexistsAsync(key, value)
+        if (ok == 0) {
+            res.send("查询不到记录")
+            return
+        }
+        let value = await redisCli.hgetAsync(address, txHash)
+        res.send("查询结果：" + value)
+    }else if (op == "del") {
+        let ok = await redisCli.hexistsAsync(key, value)
+        if (ok == 0) {
+            res.send("查询不到记录")
+            return
+        }
+        redisCli.hdel(key, value)
+        res.send("成功删除key:" + key + " value:" + value)
+    }else if (op == "getall") {
+        let arr = await redisCli.hgetallAsync(key)
+        res.send("查询结果：" + arr)
+    } else{
+        res.send("找不多指定的操作！")
+        return
+    }
+})
+
 // 充值流程 检测到有充值，通知后端，后端查询返回充值数量
 //模拟后端，区块链检测到有代币充值，通知这个接口
 app.post('/rechargeCallback', async function (req, res) {
@@ -196,17 +229,21 @@ app.post('/rechargeCallback', async function (req, res) {
     //拿到有充值成功的地址和时间
     let address = req.body.address
     let txHash = req.body.txHash
-    let appid = req.body.appid
-    if (address == null || time == null) {
+    if (address == null || txHash == null) {
         res.send(fail("参数不足"))
         return
     }
     res.send(success("服务端收到充值信息"))
 
+    let options = {
+        method: 'POST',
+        uri: "http://127.0.0.1:1686/queryRecharge",
+        body: {"address": address, "txHash": txHash},
+        json: true
+    };
     //请求充值地址的余额
-    let data = {"address": address, "txHash": txHash}
-    request.post("http://127.0.0.1:1686/queryRecharge", data, function(e, r, body){
-        console.log("服务端查询充值结果：", body)
+    request(options).then((msg)=>{
+        console.log("服务端查询充值结果：", msg)
     })
 })
 
@@ -228,7 +265,7 @@ app.post('/queryRecharge', async function (req, res) {
     }
     let value = await redisCli.hgetAsync(address, txHash)
     redisCli.hdel(address, txHash)
-    res.send(success({"address": address, "value": value}))
+    res.send(success({"address": address, "value": Number(value)}))
 })
 
 // 提币流程 收到后台的提币请求，发送后端验证成功，转账成功通知后端
@@ -319,7 +356,9 @@ async function transactionToken(token, adminAddress, privateKey, toAddr, amount,
 
         let decimals = await contract.methods.decimals().call();
         let toAmount = amount * Math.pow(10, decimals);
+        console.log("--1>>", toAmount)
         let fromBalance = await contract.methods.balanceOf(adminAddress).call(); // 获取转出账户的余额
+        console.log("--2>>", fromBalance)
         if (fromBalance < toAmount) {
             console.log("balance:%s, toAmount:%s", fromBalance, toAmount)
             tool.sendHttp(appid, cfg.backErrorPath, fail("账户token不足"), "console", "转账操作")
@@ -328,6 +367,7 @@ async function transactionToken(token, adminAddress, privateKey, toAddr, amount,
         }
 
         let tokenData = contract.methods.transfer(toAddr, toAmount).encodeABI();
+        console.log("--3>>", tokenData)
         let txParms = {
             from: adminAddress,
             to: toAddr,
@@ -376,6 +416,8 @@ async function transactionToken(token, adminAddress, privateKey, toAddr, amount,
         redisCli.hdel("pending", order)
     }
 }
+
+
 
 // 通过私钥转账ETH，本地开发用
 app.post('/transactionETH', async function (req, res) {

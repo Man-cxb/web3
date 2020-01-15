@@ -28,13 +28,12 @@ async function dbmgr(tbname, op, value) {
     let parm = ""
 
     console.log("数据库操作：tbname: %s, op: %s, parm: %s", tbname, op, value)
-
-    if (!querySql.has(tbname)) {
-        console.log("找不到表%s", tbname)
-        return cb(500, "找不到表")
-    }
-
+    
     if (op == "save") {
+        if (!insertSql.has(tbname)) {
+            console.log("找不到表%s", tbname)
+            return cb(500, "找不到表")
+        }
         sql = insertSql.get(tbname)
         if (!value) {
             console.log("存储数据缺少参数：", tbname, op, value)
@@ -43,6 +42,10 @@ async function dbmgr(tbname, op, value) {
             parm = value
         }
     } else {
+        if (!querySql.has(tbname)) {
+            console.log("找不到表%s", tbname)
+            return cb(500, "找不到表")
+        }
         sql = querySql.get(tbname)
         if (value) {
             let len = 1
